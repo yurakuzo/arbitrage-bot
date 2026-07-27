@@ -19,6 +19,9 @@ def setup_logging(level: str = "INFO") -> None:
         datefmt="[%X]",
         handlers=[RichHandler(rich_tracebacks=True, show_path=False)],
     )
+    # httpx/httpcore log every request at INFO — too noisy for our purposes.
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     _CONFIGURED = True
 
 

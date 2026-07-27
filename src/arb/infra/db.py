@@ -8,9 +8,9 @@ and dependency-free (stdlib sqlite3); schema is created idempotently.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 
 SCHEMA = """
 -- Market discovery snapshots (what markets existed at collection time).
@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS book_snapshots (
     no_best_bid   REAL,
     yes_ask_depth REAL,   -- contracts available on the yes-ask ladder
     no_ask_depth  REAL,
+    volume        REAL,    -- market lifetime volume at snapshot time
+    liquidity     REAL,    -- market resting liquidity at snapshot time
     raw           TEXT     -- JSON blob of the full normalized book (optional)
 );
 CREATE INDEX IF NOT EXISTS ix_book_market_ts

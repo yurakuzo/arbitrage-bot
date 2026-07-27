@@ -12,3 +12,23 @@ thresholds:
 venues:
   - kalshi
   - polymarket
+
+# How analysis mode finds candidate markets per venue.
+discovery:
+  kalshi:
+    # Kalshi's raw /markets listing is >90% auto-generated sports parlays, so we
+    # sweep curated recurring SERIES instead. Defaults below are daily high-temp
+    # markets (the "weather per day" use case). Find more series tickers via the
+    # Kalshi site or GET /series?category=<Economics|Politics|...>.
+    series:
+      - KXHIGHNY      # NYC daily high temp
+      - KXHIGHLAX     # LA daily high temp
+      - KXHIGHCHI     # Chicago daily high temp
+    # Optionally sweep whole categories (each resolves to all its series):
+    categories: []    # e.g. ["Economics"]
+    per_series_limit: 100
+  polymarket:
+    # Polymarket's listing is already volume-sorted; no curation needed.
+    series: []
+    categories: []
+    per_series_limit: 100

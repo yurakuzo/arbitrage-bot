@@ -174,12 +174,41 @@ arb check
 Secrets live only in `.env` (gitignored) — never commit them. To use another PC,
 `git pull` the repo and recreate its own `.env` (the doc above is all you need).
 
+## 6b. Analysis mode (Phase 1)
+
+```bash
+arb collect --limit 200      # sweep configured markets -> snapshot to SQLite
+arb report                   # export reports/analysis.xlsx from snapshots
+arb collect --venue kalshi   # optional: one venue only
+```
+
+Run `collect` on a schedule (cron / Task Scheduler); each run appends a snapshot,
+so cross-run stats (price volatility, sample count) accrue over time. `report`
+builds two sheets: **markets** (latest snapshot per market — YES/NO best bid/ask,
+spread, ask-depth, volume, liquidity, volatility) and **summary** (per-venue
+counts). Sorted by liquidity then volume.
+
+**Discovery is venue-specific** (`config.yaml -> discovery`):
+- **Polymarket** — its `/markets` listing is volume-sorted, so we just take the
+  top N by volume. No curation needed.
+- **Kalshi** — its `/markets` listing is >90% auto-generated sports parlays
+  (`KXMVE...`, provisional), so blind top-N is useless. Instead we sweep curated
+  **series** (each series = a recurring market family) and/or whole **categories**
+  (resolved via `GET /series?category=`), dropping provisional/MVE noise. Default
+  seeds are daily high-temp series (`KXHIGHNY/LAX/CHI`) — the "weather per day"
+  case. Add econ/politics series or set `categories: ["Economics"]` to widen.
+
+Note: cross-venue *matching* (deciding a Kalshi market and a Polymarket market are
+the same outcome) is **Phase 2** — Phase 1 only gathers per-venue stats to inform
+that shortlist.
+
 ## 7. Roadmap
 
 - **Phase 0 — Scaffold** ✅ config, DB, logging, Telegram, anomaly, Provider ABC +
   models, fee models, CLI skeleton, tests.
-- **Phase 1 — Analysis mode:** Kalshi + Polymarket discovery/book fetch, `collector`
+- **Phase 1 — Analysis mode** ✅ Kalshi + Polymarket discovery/book fetch, `collector`
   cron entrypoint, snapshot storage, Excel `report`. *Deliverable: the Excel table.*
+  See "Analysis mode" below.
 - **Phase 2 — Matching & shortlisting:** `config/markets.yaml` canonical mapping +
   suggestion heuristics; rank candidate pairs by historical spread, fee-net edge,
   liquidity. *Deliverable: shortlist of viable pairs → seed markets chosen here.*

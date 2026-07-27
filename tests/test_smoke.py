@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from arb.config import AppConfig, load_app_config
 from arb.infra.db import Database
@@ -37,7 +37,7 @@ def test_market_book_best_prices_and_lookup():
     book = MarketBook(
         venue=Venue.KALSHI,
         market_id="KXTEST-1",
-        ts=datetime.now(timezone.utc),
+        ts=datetime.now(UTC),
         yes=OutcomeBook(asks=[PriceLevel(0.40, 100), PriceLevel(0.41, 50)]),
         no=OutcomeBook(asks=[PriceLevel(0.58, 200)]),
     )

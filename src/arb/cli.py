@@ -59,15 +59,35 @@ def setup_telegram() -> None:
 
 
 @app.command()
-def collect() -> None:
+def collect(
+    limit: int = typer.Option(200, help="Max markets to snapshot per venue."),
+    venue: str | None = typer.Option(None, help="Only collect this venue (else all configured)."),
+) -> None:
     """[Phase 1] Sweep markets across venues and snapshot into the DB."""
-    rprint("[yellow]collect[/yellow] is implemented in Phase 1 (analysis mode).")
+    from arb.analysis.collector import run_collection
+    from arb.providers.factory import build_providers
+
+    s = get_settings()
+    cfg = load_app_config()
+    venues = [venue] if venue else cfg.venues
+    providers = build_providers(venues, environment=s.environment)
+    db = Database(s.db_file)
+    discovery = cfg.discovery.model_dump()
+    counts = asyncio.run(run_collection(providers, db, limit, discovery))
+    for name, n in counts.items():
+        rprint(f"[green]{name}[/green]: {n} snapshots")
 
 
 @app.command()
-def report() -> None:
+def report(
+    out: str = typer.Option("reports/analysis.xlsx", help="Output .xlsx path."),
+) -> None:
     """[Phase 1] Export an Excel analysis report from collected snapshots."""
-    rprint("[yellow]report[/yellow] is implemented in Phase 1 (analysis mode).")
+    from arb.analysis.report import write_report
+
+    s = get_settings()
+    path = write_report(Database(s.db_file), out)
+    rprint(f"[green]Report written:[/green] {path}")
 
 
 @app.command()

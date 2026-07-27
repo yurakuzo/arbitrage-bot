@@ -60,10 +60,34 @@ class ThresholdConfig(BaseModel):
     max_stake_usd: float = 100.0  # per-opportunity cap (paper)
 
 
+class VenueDiscovery(BaseModel):
+    """How to find candidate markets for a venue in analysis mode."""
+
+    # Kalshi: series tickers to sweep (each expands to its recurring markets).
+    series: list[str] = Field(default_factory=list)
+    # Kalshi: whole categories to sweep (resolved to their series via /series).
+    categories: list[str] = Field(default_factory=list)
+    # Max markets listed per series.
+    per_series_limit: int = 100
+
+
+class DiscoveryConfig(BaseModel):
+    """Per-venue discovery. Kalshi's listing is flooded by auto-generated sports
+    markets, so it needs curated series; Polymarket's listing is volume-sorted
+    and usable as-is."""
+
+    # Default seeds demonstrate the recurring-weather use case out of the box.
+    kalshi: VenueDiscovery = Field(
+        default_factory=lambda: VenueDiscovery(series=["KXHIGHNY", "KXHIGHLAX", "KXHIGHCHI"])
+    )
+    polymarket: VenueDiscovery = Field(default_factory=VenueDiscovery)
+
+
 class AppConfig(BaseModel):
     """Non-secret configuration loaded from YAML."""
 
     thresholds: ThresholdConfig = Field(default_factory=ThresholdConfig)
+    discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
     # Enabled venues for this deployment.
     venues: list[str] = Field(default_factory=lambda: ["kalshi", "polymarket"])
 

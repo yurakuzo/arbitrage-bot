@@ -1,0 +1,34 @@
+# Secrets & local config
+.env
+config/config.yaml
+config/*.local.yaml
+
+# Data & reports (local, per-machine)
+data/
+*.sqlite
+*.sqlite3
+*.db
+reports/
+*.xlsx
+
+# Keys
+*.pem
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,14 @@
+# Non-secret tuning. Copy to config/config.yaml to override (config.yaml is gitignored).
+# Secrets live in .env, never here.
+
+thresholds:
+  # Minimum fee-net edge (in dollars per contract) required to flag an opportunity.
+  min_edge: 0.01
+  # Quotes older than this (milliseconds) are treated as stale -> anomaly, never traded on.
+  max_quote_age_ms: 2000
+  # Per-opportunity paper stake cap (USD).
+  max_stake_usd: 100.0
+
+venues:
+  - kalshi
+  - polymarket

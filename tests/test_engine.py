@@ -6,12 +6,14 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from arb.config import ThresholdConfig
+from arb.config import ExecutionConfig, Settings, ThresholdConfig
 from arb.core.matching import CanonicalPair, OutcomeMapping
 from arb.infra.anomaly import AnomalyReporter
 from arb.infra.db import Database
 from arb.infra.telegram import TelegramNotifier
 from arb.live.engine import Engine, canonicalize, evaluate
+from arb.live.executor import Executor
+from arb.live.gate import TradingGate
 from arb.live.simulator import PaperLedger
 from arb.providers.models import MarketBook, Outcome, OutcomeBook, PriceLevel, Venue
 
@@ -83,11 +85,22 @@ def test_evaluate_stake_cap_scales_size():
 
 
 def _engine(db):
+    notifier = TelegramNotifier(None, None)  # disabled -> no network
+    gate = TradingGate.from_config(Settings(environment="demo"), ExecutionConfig(mode="paper"))
+    executor = Executor(
+        mode="paper",
+        providers={},
+        notifier=notifier,
+        ledger=PaperLedger(db=db),
+        gate=gate,
+        execution=ExecutionConfig(mode="paper"),
+        anomaly=AnomalyReporter(notifier),
+    )
     return Engine(
         providers={},
         pairs=[_pair()],
-        ledger=PaperLedger(db=db),
-        anomaly=AnomalyReporter(TelegramNotifier(None, None)),  # disabled -> no network
+        executor=executor,
+        anomaly=AnomalyReporter(notifier),
         thresholds=ThresholdConfig(),
     )
 
@@ -103,16 +116,16 @@ async def test_engine_records_once_with_hysteresis(tmp_path):
 
     await eng._on_book(ka)
     await eng._on_book(pm)  # both legs present -> arb -> 1 trade
-    assert eng.ledger.trades == 1
+    assert eng.executor.ledger.trades == 1
 
     # Repeated update while opportunity stays open -> no duplicate fill.
     await eng._on_book(_book(Venue.POLYMARKET, "0xabc", no_asks=[(0.55, 60)]))
-    assert eng.ledger.trades == 1
+    assert eng.executor.ledger.trades == 1
 
     # Opportunity disappears (no edge) -> hysteresis resets.
     await eng._on_book(_book(Venue.POLYMARKET, "0xabc", no_asks=[(0.90, 60)]))
-    assert eng.ledger.trades == 1
+    assert eng.executor.ledger.trades == 1
 
     # New opportunity -> fires again.
     await eng._on_book(_book(Venue.POLYMARKET, "0xabc", no_asks=[(0.55, 60)]))
-    assert eng.ledger.trades == 2
+    assert eng.executor.ledger.trades == 2

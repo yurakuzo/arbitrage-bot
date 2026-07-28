@@ -17,7 +17,9 @@ auth is only needed for account/order endpoints (Phase 4).
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from arb.core.fees import FeeModel, KalshiFeeModel
 from arb.infra.logging import get_logger
@@ -27,10 +29,17 @@ from arb.providers.models import (
     Market,
     MarketBook,
     MarketFilter,
+    Order,
+    OrderResult,
+    Outcome,
     OutcomeBook,
     PriceLevel,
+    Side,
     Venue,
 )
+
+if TYPE_CHECKING:
+    from arb.live.gate import TradingGate
 
 PROD_BASE = "https://api.elections.kalshi.com/trade-api/v2"
 DEMO_BASE = "https://demo-api.kalshi.co/trade-api/v2"
@@ -128,14 +137,83 @@ def parse_order_book(market_id: str, payload: dict, ts: datetime) -> MarketBook:
     )
 
 
+def build_order_payload(order: Order) -> dict:
+    """Translate a normalized Order into a Kalshi create-order body (pure).
+
+    Kalshi prices are integer cents (1-99); a BUY sets the price on the chosen
+    side. IOC/FOK map to Kalshi's immediate execution; GTC rests.
+    """
+    price_cents = max(1, min(99, round(order.limit_price * 100)))
+    body = {
+        "ticker": order.market_id,
+        "action": order.side.value,  # "buy" | "sell"
+        "side": order.outcome.value,  # "yes" | "no"
+        "type": "limit",
+        "count": int(order.contracts),
+        "client_order_id": order.client_order_id or str(uuid.uuid4()),
+    }
+    if order.outcome is Outcome.YES:
+        body["yes_price"] = price_cents
+    else:
+        body["no_price"] = price_cents
+    return body
+
+
 class KalshiProvider(Provider):
     venue = Venue.KALSHI
 
-    def __init__(self, environment: str = "demo"):
-        # Public read endpoints are served by the production host; account/order
-        # calls (Phase 4) will honor the demo/prod switch.
+    _ORDERS_PATH = "/trade-api/v2/portfolio/orders"
+
+    def __init__(
+        self,
+        environment: str = "demo",
+        key_id: str | None = None,
+        private_key_path: str | None = None,
+    ):
+        # Public read endpoints are served by the production host; authenticated
+        # order calls require RSA credentials (Phase 4).
         self.environment = environment
         self._http = RestClient(base_url=PROD_BASE)
+        self._key_id = key_id
+        self._private_key_path = private_key_path
+        self._signer = None  # built lazily on first authenticated call
+
+    def _get_signer(self):
+        if self._signer is None:
+            if not (self._key_id and self._private_key_path):
+                raise RuntimeError(
+                    "Kalshi live trading needs ARB_KALSHI_API_KEY_ID and "
+                    "ARB_KALSHI_PRIVATE_KEY_PATH."
+                )
+            from arb.providers.auth.kalshi_auth import KalshiSigner
+
+            self._signer = KalshiSigner.from_file(self._key_id, self._private_key_path)
+        return self._signer
+
+    async def place_order(self, order: Order, gate: TradingGate) -> OrderResult:
+        # Gate first — the only path to a real order, and it must be fully open.
+        stake = order.contracts * order.limit_price
+        gate.check_order(stake)  # raises TradingBlocked unless permitted
+        if order.side is not Side.BUY:
+            raise NotImplementedError("Only BUY legs are supported in v1 arbitrage.")
+
+        signer = self._get_signer()
+        payload = build_order_payload(order)
+        headers = signer.headers("POST", self._ORDERS_PATH)
+        import httpx  # local import; only needed for the live path
+
+        url = f"{PROD_BASE}/portfolio/orders"
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            ok = resp.is_success
+            data = resp.json() if resp.content else {}
+        o = data.get("order", data) if isinstance(data, dict) else {}
+        return OrderResult(
+            ok=ok,
+            order_id=o.get("order_id"),
+            status=o.get("status", "" if ok else f"http_{resp.status_code}"),
+            raw=data if isinstance(data, dict) else {},
+        )
 
     async def list_markets(self, flt: MarketFilter) -> list[Market]:
         target = flt.limit or 500

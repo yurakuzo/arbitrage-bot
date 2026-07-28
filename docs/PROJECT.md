@@ -66,9 +66,10 @@ arbitrage-bot/
     cli.py                # `arb` entrypoint: check / init-db / setup-telegram / collect / report / run
     providers/
       base.py             # Provider ABC — the pluggable interface
-      models.py           # normalized Venue/Outcome/PriceLevel/OutcomeBook/MarketBook/Market
-      kalshi.py           # (Phase 1) REST discovery + books; WS; RSA-PSS auth
-      polymarket.py       # (Phase 1) Gamma discovery + CLOB books; WS
+      models.py           # normalized market/book types + Order/OrderResult
+      kalshi.py           # discovery + books; gated RSA-signed place_order  [done]
+      polymarket.py       # Gamma discovery + CLOB books/WS; place_order stub [4b]
+      auth/kalshi_auth.py # Kalshi RSA-PSS request signer                     [done]
     core/
       fees.py             # per-venue fee models (Kalshi convex; Polymarket bps)  [done]
       pricing.py          # fee-net edge + book-walking sizing (arb detection)  [done]
@@ -78,8 +79,10 @@ arbitrage-bot/
       report.py           # DB -> Excel per-market stats                     [done]
       shortlist.py        # rank curated pairs by fee-net edge -> Excel      [done]
     live/
-      engine.py           # feeds -> detect -> size -> paper-exec            [done]
+      engine.py           # feeds -> detect -> execute                       [done]
       feeds.py            # Polymarket WS + Kalshi polling feeds             [done]
+      gate.py             # TradingGate — multi-flag real-order guard        [done]
+      executor.py         # paper/semi_auto/auto routing + outcome mapping   [done]
       simulator.py        # paper fills + P&L ledger                         [done]
     infra/
       db.py               # SQLite schema + access                              [done]
@@ -98,7 +101,9 @@ Core logic never imports a venue directly.
 - `get_order_book(market_id)` — REST snapshot.
 - `stream_order_books(market_ids)` — async iterator of live WS updates.
 - `fee_model(series_key)` — venue fee model.
-- `place_order` / `cancel_order` — **raise `NotImplementedError` in v1**.
+- `place_order(order, gate)` — real order, **gate-guarded** (Phase 4). Kalshi
+  implemented; Polymarket stubbed (4b). Default raises so a venue can't trade
+  by accident.
 
 ### Normalized price convention
 All prices are floats in **dollars [0, 1]**. Kalshi cents (1–99) and Polymarket
@@ -260,6 +265,50 @@ Safety/robustness:
 - **Hysteresis** — each opportunity records once; it must close (edge ≤ 0) before
   it can re-trigger, so a persistent gap doesn't spam fills/alerts.
 
+## 6e. Live execution (Phase 4 — gated, off by default)
+
+> **v1 default is paper. No real order can leave the process unless you
+> deliberately open every gate below.** Building this is not a recommendation to
+> trade; real-money operation, and the regulatory question (Polymarket blocks US
+> persons; Kalshi is US-only), are the operator's responsibility.
+
+### The trading gate (`live.gate.TradingGate`)
+A real order is placed **only if ALL** hold (else it transparently falls back to
+paper):
+1. `ARB_LIVE_TRADING=true` (env master switch)
+2. `execution.mode` is `semi_auto` or `auto` (config)
+3. `ARB_ENVIRONMENT=prod`
+4. per-order stake ≤ `execution.max_order_stake_usd`
+
+Every `provider.place_order` calls `gate.check_order()` first — there is no code
+path to a real order that bypasses it. Check your status any time:
+```bash
+arb check      # -> "Trading gate: paper (safe)"  or  "LIVE (places real orders)"
+```
+
+### Execution modes (`arb run --mode ...` or `config.execution.mode`)
+- **paper** — simulate + record P&L (default; always safe).
+- **semi_auto** — on each hit, send a Telegram proposal; place **only** on an
+  explicit `yes <nonce>` reply within `confirm_timeout_s` (timeout ⇒ skip).
+- **auto** — place both legs immediately (only when the gate is fully open).
+
+Outcome translation: the engine detects in a canonical (YES == event) space; the
+executor maps each leg back to the venue's **native** yes/no side before ordering
+(`live.executor.native_outcome`) — verified by tests, since a flip would place the
+opposite bet.
+
+### Venue status
+- **Kalshi** ✅ `place_order` implemented: RSA-PSS request signing
+  (`providers.auth.kalshi_auth`), `POST /portfolio/orders`, prices in cents. Needs
+  `ARB_KALSHI_API_KEY_ID` + `ARB_KALSHI_PRIVATE_KEY_PATH` and `pip install -e '.[live]'`.
+- **Polymarket** 🟡 stub (Phase 4b): requires `py-clob-client`, a funded Polygon
+  wallet, one-time USDC/CTF approvals, and EIP-712 order signing. Raises a clear
+  `NotImplementedError` until wired.
+
+Leg risk: legs are placed sequentially; if the second fails after the first fills,
+a `CRITICAL` anomaly fires (→ Telegram) flagging manual review. True atomicity
+isn't possible across two independent venues — size conservatively.
+
 ## 7. Roadmap
 
 - **Phase 0 — Scaffold** ✅ config, DB, logging, Telegram, anomaly, Provider ABC +
@@ -274,9 +323,11 @@ Safety/robustness:
 - **Phase 3 — Live engine (paper)** ✅ Polymarket WS + Kalshi polling feeds, real-time
   fee-net detection over curated pairs, book-walking sizer, paper simulator + P&L,
   anomaly → Telegram. See "Live paper engine" below.
-- **Phase 4 (gated, later) — Live execution:** implement `place_order` (Kalshi REST
-  first, Polymarket EIP-712 second), explicit enable flag, semi-auto (Telegram
-  confirm) before any full-auto.
+- **Phase 4 — Live execution (gated)** 🟡 *scaffolding done, off by default.*
+  `TradingGate` (multi-flag, default paper), execution modes (paper/semi_auto/auto),
+  Telegram-confirm, Kalshi RSA-signed `place_order`. **Remaining (4b):** Polymarket
+  EIP-712 placement via `py-clob-client` + funded wallet/approvals; real-money
+  operation is the user's decision. See "Live execution" below.
 
 ## 8. Verification
 

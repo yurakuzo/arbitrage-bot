@@ -21,7 +21,7 @@ from arb.core.matching import CanonicalPair
 from arb.core.pricing import ArbLeg, ArbOpportunity, find_arbitrage
 from arb.infra.anomaly import AnomalyReporter, Severity
 from arb.infra.logging import get_logger
-from arb.live.simulator import PaperLedger
+from arb.live.executor import Executor
 from arb.providers.base import Provider
 from arb.providers.models import MarketBook, Outcome
 
@@ -106,13 +106,13 @@ class Engine:
         self,
         providers: dict[str, Provider],
         pairs: list[CanonicalPair],
-        ledger: PaperLedger,
+        executor: Executor,
         anomaly: AnomalyReporter,
         thresholds: ThresholdConfig,
     ):
         self.providers = providers
         self.pairs = pairs
-        self.ledger = ledger
+        self.executor = executor
         self.anomaly = anomaly
         self.thresholds = thresholds
         self.books: dict[tuple[str, str], MarketBook] = {}
@@ -147,13 +147,13 @@ class Engine:
         if res.status == "arb" and res.opp is not None:
             if pair.canonical_id not in self._open:
                 self._open.add(pair.canonical_id)
-                self.ledger.record(pair, res.opp, datetime.now(UTC))
                 await self.anomaly.report(
                     Severity.INFO,
                     "arb_detected",
                     f"{pair.canonical_id}: net=${res.opp.net_profit:.2f} "
                     f"edge/contract=${res.opp.net_edge_per_contract:.4f}",
                 )
+                await self.executor.execute(pair, res.opp, datetime.now(UTC))
         elif pair.canonical_id in self._open:
             # Opportunity closed — reset hysteresis so the next one re-triggers.
             self._open.discard(pair.canonical_id)
@@ -210,6 +210,6 @@ class Engine:
                 if close:
                     await close()
         log.info(
-            "engine stopped: %d paper trades, running P&L=$%.2f",
-            self.ledger.trades, self.ledger.realized_profit,
+            "engine stopped: %d trades recorded, running P&L=$%.2f",
+            self.executor.ledger.trades, self.executor.ledger.realized_profit,
         )

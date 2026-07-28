@@ -8,9 +8,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING
 
 from arb.core.fees import FeeModel
-from arb.providers.models import Market, MarketBook, MarketFilter, Venue
+from arb.providers.models import Market, MarketBook, MarketFilter, Order, OrderResult, Venue
+
+if TYPE_CHECKING:
+    from arb.live.gate import TradingGate
 
 
 class Provider(ABC):
@@ -51,12 +55,15 @@ class Provider(ABC):
     def fee_model(self, series_key: str | None = None) -> FeeModel:
         """Return the fee model for a market/series."""
 
-    # --- Execution (Phase 4 — intentionally unimplemented in v1) --------------
-    async def place_order(self, *args, **kwargs):
-        raise NotImplementedError(
-            "Live order placement is disabled in v1 (paper-trading only). "
-            "It is a later, explicitly config-gated phase."
-        )
+    # --- Execution (Phase 4 — gated) -----------------------------------------
+    async def place_order(self, order: Order, gate: TradingGate) -> OrderResult:
+        """Place a REAL order. Implementations MUST call `gate.check_order(...)`
+        first — the gate is the only thing standing between this call and real
+        money, and there is no code path to a live order that skips it.
 
-    async def cancel_order(self, *args, **kwargs):
-        raise NotImplementedError("Live order placement is disabled in v1.")
+        The default raises: a venue without a real implementation can never trade.
+        """
+        raise NotImplementedError(f"Live order placement not implemented for {self.venue}.")
+
+    async def cancel_order(self, order_id: str, gate: TradingGate) -> bool:
+        raise NotImplementedError(f"Order cancel not implemented for {self.venue}.")

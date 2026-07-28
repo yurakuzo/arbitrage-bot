@@ -25,8 +25,9 @@ dev = [
 # Venue trading SDKs — only needed for Phase 4 (live execution). Kept optional so v1
 # (detection + paper-trading) installs lean and works with public read-only endpoints.
 live = [
+    "cryptography>=42.0",   # Kalshi RSA-PSS request signing
     "kalshi-python-sync>=1.0",
-    "py-clob-client>=0.1",
+    "py-clob-client>=0.1",  # Polymarket EIP-712 order signing + CLOB client
 ]
 
 [project.scripts]

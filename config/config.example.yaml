@@ -14,6 +14,17 @@ venues:
   - kalshi
   - polymarket
 
+# Live execution (Phase 4). Defaults are the safest possible.
+execution:
+  # paper: simulate only (no real orders — the safe default).
+  # semi_auto: propose each trade via Telegram; place only on an explicit "yes".
+  # auto: place both legs immediately (highest risk).
+  # NOTE: even semi_auto/auto place NOTHING unless the trading gate is fully open
+  # (ARB_LIVE_TRADING=true AND ARB_ENVIRONMENT=prod). See docs/PROJECT.md.
+  mode: paper
+  confirm_timeout_s: 120      # semi_auto: seconds to wait for a Telegram yes/no
+  max_order_stake_usd: 50.0   # hard per-order cap on real capital
+
 # How analysis mode finds candidate markets per venue.
 discovery:
   kalshi:

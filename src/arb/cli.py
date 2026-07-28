@@ -35,6 +35,11 @@ def check() -> None:
     rprint(f"[bold]Kalshi key set:[/bold] {bool(s.kalshi_api_key_id)}")
     rprint(f"[bold]Venues:[/bold] {', '.join(cfg.venues)}")
     rprint(f"[bold]Thresholds:[/bold] {cfg.thresholds.model_dump()}")
+    from arb.live.gate import TradingGate
+
+    gate = TradingGate.from_config(s, cfg.execution)
+    colour = "red" if gate.places_real_orders else "green"
+    rprint(f"[bold]Trading gate:[/bold] [{colour}]{gate.describe()}[/{colour}]")
 
 
 @app.command("init-db")
@@ -156,20 +161,29 @@ def run(
         None, help="Stop after N seconds (default: run until Ctrl+C)."
     ),
     poll: bool = typer.Option(False, "--poll", help="Force REST polling for all venues (no WS)."),
+    mode: str | None = typer.Option(
+        None, help="Override execution mode: paper | semi_auto | auto (default: config)."
+    ),
 ) -> None:
-    """[Phase 3] Run the live paper-trading engine over curated pairs.
+    """[Phase 3/4] Run the live engine over curated pairs.
 
-    Detects fee-net arbitrage in real time, records simulated fills, and sends
-    Telegram alerts on anomalies. Places NO real orders.
+    Detects fee-net arbitrage in real time and sends Telegram alerts. Execution
+    mode (config or --mode) decides what happens on a hit: paper simulates;
+    semi_auto asks for Telegram confirmation; auto places directly. Real orders
+    require the full opt-in (see `arb check` → trading gate) — otherwise it
+    transparently falls back to paper.
     """
     from arb.core.matching import load_mappings
     from arb.infra.anomaly import AnomalyReporter
     from arb.live.engine import Engine
+    from arb.live.executor import Executor
+    from arb.live.gate import TradingGate
     from arb.live.simulator import PaperLedger
     from arb.providers.factory import build_providers
 
     s = get_settings()
     cfg = load_app_config()
+    exec_mode = mode or cfg.execution.mode
     pairs = load_mappings(mappings)
     if not pairs:
         rprint(f"[yellow]No mappings in {mappings}. Add pairs (see markets.example.yaml) first.[/yellow]")
@@ -178,22 +192,38 @@ def run(
     db = Database(s.db_file)
     db.init_schema()
     venues = sorted({v for p in pairs for v in p.legs})
-    providers = build_providers([v for v in venues if v in cfg.venues], environment=s.environment)
+    providers = build_providers(
+        [v for v in venues if v in cfg.venues], environment=s.environment, settings=s
+    )
     notifier = TelegramNotifier(s.telegram_bot_token, s.telegram_chat_id)
+    gate = TradingGate.from_config(s, cfg.execution)
+    executor = Executor(
+        mode=exec_mode,
+        providers=providers,
+        notifier=notifier,
+        ledger=PaperLedger(db=db),
+        gate=gate,
+        execution=cfg.execution,
+        anomaly=AnomalyReporter(notifier),
+    )
     engine = Engine(
         providers=providers,
         pairs=pairs,
-        ledger=PaperLedger(db=db),
+        executor=executor,
         anomaly=AnomalyReporter(notifier),
         thresholds=cfg.thresholds,
     )
-    rprint(f"[bold]Live paper engine[/bold] — {len(pairs)} pair(s); Ctrl+C to stop.")
+    banner = "LIVE" if gate.places_real_orders else "paper"
+    rprint(f"[bold]Engine[/bold] mode=[cyan]{exec_mode}[/cyan] gate=[cyan]{banner}[/cyan] "
+           f"— {len(pairs)} pair(s); Ctrl+C to stop.")
+    if gate.places_real_orders:
+        rprint("[red bold]⚠ REAL ORDERS ENABLED — this can spend real money.[/red bold]")
     try:
         asyncio.run(engine.run(duration_s=duration, force_poll=poll))
     except KeyboardInterrupt:
         rprint("\n[yellow]Stopped.[/yellow]")
-    rprint(f"[green]Paper trades:[/green] {engine.ledger.trades}  "
-           f"[green]P&L:[/green] ${engine.ledger.realized_profit:.2f}")
+    rprint(f"[green]Trades:[/green] {executor.ledger.trades}  "
+           f"[green]P&L:[/green] ${executor.ledger.realized_profit:.2f}")
 
 
 @app.command("test-alert")

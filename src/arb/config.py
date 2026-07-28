@@ -42,6 +42,11 @@ class Settings(BaseSettings):
 
     polymarket_private_key: str | None = None
 
+    # HARD master switch for real order placement. Must be explicitly true AND
+    # combined with a non-paper execution mode AND prod environment before any
+    # real order can be sent (see TradingGate). Default false = paper only.
+    live_trading: bool = False
+
     @property
     def db_file(self) -> Path:
         p = Path(self.db_path)
@@ -85,11 +90,23 @@ class DiscoveryConfig(BaseModel):
     polymarket: VenueDiscovery = Field(default_factory=VenueDiscovery)
 
 
+class ExecutionConfig(BaseModel):
+    """Live-execution behaviour (Phase 4). Defaults are the safest possible."""
+
+    # paper: simulate only (no real orders — the v1 default and always safe).
+    # semi_auto: propose each trade via Telegram and place only on confirmation.
+    # auto: place immediately (highest risk; requires the master switch + prod).
+    mode: str = "paper"
+    confirm_timeout_s: int = 120  # semi_auto: how long to wait for a Telegram yes
+    max_order_stake_usd: float = 50.0  # hard per-order cap on real capital
+
+
 class AppConfig(BaseModel):
     """Non-secret configuration loaded from YAML."""
 
     thresholds: ThresholdConfig = Field(default_factory=ThresholdConfig)
     discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
+    execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     # Enabled venues for this deployment.
     venues: list[str] = Field(default_factory=lambda: ["kalshi", "polymarket"])
 

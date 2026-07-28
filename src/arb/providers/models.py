@@ -96,3 +96,45 @@ class MarketFilter:
     series_key: str | None = None
     status: str | None = "open"
     limit: int | None = None
+
+
+class Side(str, Enum):
+    BUY = "buy"
+    SELL = "sell"
+
+
+class TimeInForce(str, Enum):
+    GTC = "gtc"  # good-till-cancel
+    IOC = "ioc"  # immediate-or-cancel / fill-and-kill
+    FOK = "fok"  # fill-or-kill
+
+
+@dataclass(frozen=True, slots=True)
+class Order:
+    """A venue-agnostic order request (Phase 4).
+
+    `limit_price` is in dollars [0,1]. For arbitrage we place limit orders at (or
+    just through) the observed ask so fills are near the priced level; a marketable
+    limit with IOC/FOK avoids resting exposure on one leg.
+    """
+
+    venue: Venue
+    market_id: str
+    outcome: Outcome
+    side: Side
+    contracts: float
+    limit_price: float
+    tif: TimeInForce = TimeInForce.FOK
+    client_order_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class OrderResult:
+    """Outcome of a place_order call."""
+
+    ok: bool
+    order_id: str | None = None
+    filled_contracts: float = 0.0
+    avg_price: float | None = None
+    status: str = ""
+    raw: dict = field(default_factory=dict)

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from arb.core.fees import FeeModel, PolymarketFeeModel
 from arb.providers.base import Provider
@@ -24,10 +25,15 @@ from arb.providers.models import (
     Market,
     MarketBook,
     MarketFilter,
+    Order,
+    OrderResult,
     OutcomeBook,
     PriceLevel,
     Venue,
 )
+
+if TYPE_CHECKING:
+    from arb.live.gate import TradingGate
 
 GAMMA_BASE = "https://gamma-api.polymarket.com"
 CLOB_BASE = "https://clob.polymarket.com"
@@ -166,6 +172,22 @@ class PolymarketProvider(Provider):
 
     def fee_model(self, series_key: str | None = None) -> FeeModel:
         return PolymarketFeeModel()
+
+    async def place_order(self, order: Order, gate: TradingGate) -> OrderResult:
+        # Gate first — refuses unless the full live opt-in is present.
+        gate.check_order(order.contracts * order.limit_price)
+        # Real placement is non-trivial: EIP-712 order signing, USDC + CTF
+        # approvals on Polygon, and L1->L2 API-credential derivation. This is
+        # delegated to the official `py-clob-client` (the `.[live]` extra) and a
+        # funded wallet. Implement here once the wallet/approvals are set up:
+        #   from py_clob_client.client import ClobClient
+        #   client = ClobClient(host, key=<pk>, chain_id=137, ...)
+        #   signed = client.create_order(OrderArgs(token_id=..., price=..., size=..., side=BUY))
+        #   resp = client.post_order(signed, OrderType.FOK)
+        raise NotImplementedError(
+            "Polymarket live placement (Phase 4b): requires py-clob-client, a funded "
+            "Polygon wallet, and one-time USDC/CTF approvals. See docs/PROJECT.md."
+        )
 
     async def aclose(self) -> None:
         await self._gamma.aclose()

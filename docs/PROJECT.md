@@ -63,7 +63,7 @@ arbitrage-bot/
     markets.yaml          # (Phase 2) canonical cross-venue market mapping
   src/arb/
     config.py             # Settings (.env secrets) + AppConfig (yaml tuning)
-    cli.py                # `arb` entrypoint: check / init-db / setup-telegram / collect / report / run
+    cli.py                # `arb`: check/init-db/setup-telegram/collect/report/suggest/shortlist/run/pnl
     providers/
       base.py             # Provider ABC — the pluggable interface
       models.py           # normalized market/book types + Order/OrderResult
@@ -241,7 +241,13 @@ them across machines (like this doc).
 arb run                       # run until Ctrl+C over config/markets.yaml pairs
 arb run --duration 60         # bounded run (e.g. for cron / testing)
 arb run --poll                # force REST polling for all venues (no WebSocket)
+arb pnl                       # summarize the paper-trade ledger (net P&L, by pair/venue)
 ```
+
+`arb pnl` recomputes P&L directly from the `paper_fills` rows (payout − cost −
+fees per matched pair), so the summary is self-verifying rather than trusting a
+stored number. It breaks results down by canonical pair and by venue (including
+fees paid), and lists the most recent trades.
 
 For every curated pair, the engine maintains live order books and computes the
 fee-net arbitrage in real time (`core.pricing.find_arbitrage`, walking both

@@ -226,6 +226,45 @@ def run(
            f"[green]P&L:[/green] ${executor.ledger.realized_profit:.2f}")
 
 
+@app.command()
+def pnl(
+    limit: int = typer.Option(10, help="How many recent trades to list."),
+) -> None:
+    """Summarize the paper-trade ledger: net P&L, per-pair and per-venue breakdown."""
+    from rich.table import Table
+
+    from arb.analysis.pnl import summarize
+
+    s = get_settings()
+    summ = summarize(Database(s.db_file), recent_limit=limit)
+    if summ.is_empty:
+        rprint("[yellow]No paper trades recorded yet. Run `arb run` first.[/yellow]")
+        return
+
+    colour = "green" if summ.net_profit >= 0 else "red"
+    rprint(
+        f"[bold]Paper P&L[/bold]  trades=[cyan]{summ.trades}[/cyan]  "
+        f"contracts=[cyan]{summ.contracts:.0f}[/cyan]  "
+        f"cost=${summ.gross_cost:.2f}  fees=${summ.fees:.2f}  "
+        f"net=[{colour}]${summ.net_profit:.2f}[/{colour}]  ROI={summ.roi * 100:.2f}%"
+    )
+
+    pair_tbl = Table(title="By pair", show_edge=False)
+    pair_tbl.add_column("canonical_id"); pair_tbl.add_column("trades", justify="right")
+    pair_tbl.add_column("net $", justify="right")
+    for _, r in summ.by_pair.iterrows():
+        pair_tbl.add_row(str(r["canonical_id"]), str(int(r["trades"])), f"{r['net_profit']:.2f}")
+    rprint(pair_tbl)
+
+    venue_tbl = Table(title="By venue", show_edge=False)
+    for col in ("venue", "legs", "contracts", "fees $", "cost $"):
+        venue_tbl.add_column(col, justify="right" if col != "venue" else "left")
+    for _, r in summ.by_venue.iterrows():
+        venue_tbl.add_row(str(r["venue"]), str(int(r["legs"])), f"{r['contracts']:.0f}",
+                          f"{r['fees']:.2f}", f"{r['cost']:.2f}")
+    rprint(venue_tbl)
+
+
 @app.command("test-alert")
 def test_alert() -> None:
     """Send a test Telegram alert to verify notifications work end-to-end."""

@@ -71,12 +71,13 @@ arbitrage-bot/
       polymarket.py       # (Phase 1) Gamma discovery + CLOB books; WS
     core/
       fees.py             # per-venue fee models (Kalshi convex; Polymarket bps)  [done]
-      pricing.py          # (Phase 3) fee-net cross-venue edge math
-      sizing.py           # (Phase 3) book-walking optimal stake allocation
-      matching.py         # (Phase 2) equivalent-market mapping + suggestions
+      pricing.py          # fee-net cross-venue edge + book-walking sizing  [done]
+      matching.py         # curated mapping loader + suggestion heuristics  [done]
+      sizing.py           # (Phase 3) standalone stake allocation (uses pricing)
     analysis/
-      collector.py        # (Phase 1) cron entrypoint: sweep -> snapshot -> DB
-      report.py           # (Phase 1) DB -> Excel
+      collector.py        # cron entrypoint: sweep -> snapshot -> DB         [done]
+      report.py           # DB -> Excel per-market stats                     [done]
+      shortlist.py        # rank curated pairs by fee-net edge -> Excel      [done]
     live/
       engine.py           # (Phase 3) feeds -> detect -> size -> paper-exec
       feeds.py            # (Phase 3) WS managers w/ reconnect + delta resync
@@ -202,6 +203,34 @@ Note: cross-venue *matching* (deciding a Kalshi market and a Polymarket market a
 the same outcome) is **Phase 2** — Phase 1 only gathers per-venue stats to inform
 that shortlist.
 
+## 6c. Matching & shortlisting (Phase 2)
+
+```bash
+arb suggest --threshold 0.25      # propose candidate cross-venue matches (review only)
+# ...review, then hand-add confirmed pairs to config/markets.yaml...
+arb shortlist                     # rank curated pairs by fee-net edge -> reports/shortlist.xlsx
+```
+
+**Matching is curated, never automatic.** `arb suggest` compares collected market
+titles (token Jaccard similarity) and prints ranked *candidates* — it never
+confirms them. You verify each against the real resolution rules on both venues,
+then add confirmed entries to `config/markets.yaml` (schema in
+`config/markets.example.yaml`), aligning each venue's "event happens" side. A
+wrong mapping manufactures fake edge and real losses.
+
+`arb shortlist` then, for each mapping, pulls the latest snapshot per leg and
+computes the **fee-net** arbitrage edge in both directions
+(`core.pricing.top_of_book_edge`), ranking by net edge per contract and tradable
+depth. Size/profit figures are an optimistic top-of-book proxy; exact book-walked
+sizing is live in Phase 3 (`core.pricing.find_arbitrage`).
+
+> Reality check: Kalshi's liquid recurring markets (weather, sports) and
+> Polymarket's (politics, culture) **overlap thinly**. Expect a small, curated set
+> of genuinely matchable pairs — quality over quantity.
+
+`config/markets.yaml` is *not* gitignored — commit your curated mappings to sync
+them across machines (like this doc).
+
 ## 7. Roadmap
 
 - **Phase 0 — Scaffold** ✅ config, DB, logging, Telegram, anomaly, Provider ABC +
@@ -209,9 +238,10 @@ that shortlist.
 - **Phase 1 — Analysis mode** ✅ Kalshi + Polymarket discovery/book fetch, `collector`
   cron entrypoint, snapshot storage, Excel `report`. *Deliverable: the Excel table.*
   See "Analysis mode" below.
-- **Phase 2 — Matching & shortlisting:** `config/markets.yaml` canonical mapping +
-  suggestion heuristics; rank candidate pairs by historical spread, fee-net edge,
-  liquidity. *Deliverable: shortlist of viable pairs → seed markets chosen here.*
+- **Phase 2 — Matching & shortlisting** ✅ `config/markets.yaml` canonical mapping +
+  title-similarity suggestions; fee-net arbitrage pricing (`core.pricing`); ranked
+  shortlist. *Deliverable: shortlist of viable pairs → seed markets chosen here.*
+  See "Matching & shortlisting" below.
 - **Phase 3 — Live engine (paper):** WS feeds w/ reconnect+resync, fee-net detection,
   book-walking sizer, paper simulator + P&L, anomaly → Telegram.
 - **Phase 4 (gated, later) — Live execution:** implement `place_order` (Kalshi REST

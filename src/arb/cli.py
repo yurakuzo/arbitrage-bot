@@ -91,6 +91,65 @@ def report(
 
 
 @app.command()
+def suggest(
+    threshold: float = typer.Option(0.25, help="Min title-similarity score (0-1)."),
+    top_k: int = typer.Option(30, help="Max suggestions to show."),
+) -> None:
+    """[Phase 2] Propose candidate cross-venue matches (for review, not confirmed)."""
+    from arb.core.matching import suggest_matches
+    from arb.providers.models import Venue
+
+    s = get_settings()
+    db = Database(s.db_file)
+    # Reuse collected market metadata as the candidate universe.
+    import sqlite3
+
+    from arb.providers.models import Market
+
+    def _load(conn, venue: str) -> list[Market]:
+        rows = conn.execute(
+            "SELECT venue, market_id, title, series_key FROM markets WHERE venue = ?", (venue,)
+        ).fetchall()
+        return [Market(venue=Venue(r[0]), market_id=r[1], title=r[2] or "", series_key=r[3]) for r in rows]
+
+    with db.transaction() as conn:
+        conn.row_factory = sqlite3.Row
+        ks = _load(conn, "kalshi")
+        ps = _load(conn, "polymarket")
+    suggestions = suggest_matches(ks, ps, threshold=threshold, top_k=top_k)
+    if not suggestions:
+        rprint("[yellow]No candidate matches above threshold. Try lowering --threshold.[/yellow]")
+        return
+    rprint(f"[bold]{len(suggestions)} candidate match(es)[/bold] (review before adding to markets.yaml):\n")
+    for sug in suggestions:
+        rprint(f"[green]{sug.score:.2f}[/green] terms={sug.shared_terms}")
+        rprint(f"   kalshi     [{sug.a.market_id}] {sug.a.title[:70]}")
+        rprint(f"   polymarket [{sug.b.market_id[:18]}…] {sug.b.title[:70]}\n")
+
+
+@app.command()
+def shortlist(
+    mappings: str = typer.Option("config/markets.yaml", help="Curated mappings file."),
+    out: str = typer.Option("reports/shortlist.xlsx", help="Output .xlsx path."),
+) -> None:
+    """[Phase 2] Rank curated cross-venue pairs by fee-net edge."""
+    from arb.analysis.shortlist import write_shortlist
+
+    s = get_settings()
+    df = write_shortlist(Database(s.db_file), mappings, out)
+    if df.empty:
+        rprint("[yellow]No priced pairs. Add entries to markets.yaml and run `arb collect` first.[/yellow]")
+        return
+    rprint(f"[green]Shortlist written:[/green] {out}  ({len(df)} pairs)")
+    for _, r in df.head(10).iterrows():
+        flag = "[green]+[/green]" if r["net_edge_per_contract"] > 0 else "[red]-[/red]"
+        rprint(
+            f"  {flag} {r['canonical_id']}: net edge/contract="
+            f"{r['net_edge_per_contract']:.4f}  ({r['buy_a']} @ {r['price_a']} + {r['buy_b']} @ {r['price_b']})"
+        )
+
+
+@app.command()
 def run() -> None:
     """[Phase 3] Run the live paper-trading engine over shortlisted markets."""
     rprint("[yellow]run[/yellow] is implemented in Phase 3 (live paper engine).")

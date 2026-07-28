@@ -229,6 +229,7 @@ def run(
 @app.command()
 def pnl(
     limit: int = typer.Option(10, help="How many recent trades to list."),
+    out: str | None = typer.Option(None, help="Also export the full breakdown to this .xlsx."),
 ) -> None:
     """Summarize the paper-trade ledger: net P&L, per-pair and per-venue breakdown."""
     from rich.table import Table
@@ -236,7 +237,8 @@ def pnl(
     from arb.analysis.pnl import summarize
 
     s = get_settings()
-    summ = summarize(Database(s.db_file), recent_limit=limit)
+    db = Database(s.db_file)
+    summ = summarize(db, recent_limit=limit)
     if summ.is_empty:
         rprint("[yellow]No paper trades recorded yet. Run `arb run` first.[/yellow]")
         return
@@ -263,6 +265,12 @@ def pnl(
         venue_tbl.add_row(str(r["venue"]), str(int(r["legs"])), f"{r['contracts']:.0f}",
                           f"{r['fees']:.2f}", f"{r['cost']:.2f}")
     rprint(venue_tbl)
+
+    if out:
+        from arb.analysis.pnl import export_excel
+
+        path = export_excel(db, out)
+        rprint(f"[green]P&L workbook written:[/green] {path}")
 
 
 @app.command("test-alert")

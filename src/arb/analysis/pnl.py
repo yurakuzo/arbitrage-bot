@@ -13,10 +13,14 @@ the summary is self-contained and verifiable.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import pandas as pd
 
 from arb.infra.db import Database
+from arb.infra.logging import get_logger
+
+log = get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,3 +97,32 @@ def summarize(db: Database, recent_limit: int = 10) -> PnlSummary:
         by_venue=by_venue,
         recent=recent,
     )
+
+
+def export_excel(db: Database, out_path: Path | str) -> Path:
+    """Write the full P&L breakdown to an .xlsx workbook.
+
+    Sheets: `summary` (one-row overview), `by_pair`, `by_venue`, and `trades`
+    (every reconstructed trade, not just the recent ones).
+    """
+    out = Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    summ = summarize(db)
+    fills = _load_fills(db)
+    trades = _trades_from_fills(fills) if not fills.empty else pd.DataFrame()
+    overview = pd.DataFrame([{
+        "trades": summ.trades,
+        "contracts": summ.contracts,
+        "gross_cost": summ.gross_cost,
+        "fees": summ.fees,
+        "net_profit": summ.net_profit,
+        "roi": summ.roi,
+    }])
+    trades_sheet = trades.sort_values("ts") if not trades.empty else trades
+    with pd.ExcelWriter(out, engine="openpyxl") as writer:
+        overview.to_excel(writer, sheet_name="summary", index=False)
+        summ.by_pair.to_excel(writer, sheet_name="by_pair", index=False)
+        summ.by_venue.to_excel(writer, sheet_name="by_venue", index=False)
+        trades_sheet.to_excel(writer, sheet_name="trades", index=False)
+    log.info("Wrote P&L workbook (%d trades) to %s", summ.trades, out)
+    return out

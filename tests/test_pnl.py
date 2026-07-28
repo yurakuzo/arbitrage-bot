@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from arb.analysis.pnl import summarize
+from arb.analysis.pnl import export_excel, summarize
 from arb.core.matching import CanonicalPair, OutcomeMapping
 from arb.core.pricing import ArbLeg, ArbOpportunity
 from arb.infra.db import Database
@@ -58,3 +58,32 @@ def test_summary_reconstructs_pnl_from_fills(tmp_path):
     by_venue = {r["venue"]: r for _, r in summ.by_venue.iterrows()}
     assert by_venue["kalshi"]["fees"] == 2.0
     assert by_venue["polymarket"]["fees"] == 0.0
+
+
+def test_export_excel(tmp_path):
+    import openpyxl
+
+    db = Database(tmp_path / "p.sqlite"); db.init_schema()
+    ledger = PaperLedger(db=db)
+    t0 = datetime.now(UTC)
+    ledger.record(_pair(), _opp(), t0)
+    ledger.record(_pair(), _opp(), t0 + timedelta(seconds=1))
+
+    out = export_excel(db, tmp_path / "pnl.xlsx")
+    assert out.exists()
+    wb = openpyxl.load_workbook(out)
+    assert {"summary", "by_pair", "by_venue", "trades"} <= set(wb.sheetnames)
+    # summary sheet: header + one data row with the total net.
+    ws = wb["summary"]
+    header = [c.value for c in ws[1]]
+    row = [c.value for c in ws[2]]
+    assert row[header.index("net_profit")] == 4.0
+    assert row[header.index("trades")] == 2
+    # trades sheet has both trades.
+    assert wb["trades"].max_row == 3  # header + 2 trades
+
+
+def test_export_excel_empty(tmp_path):
+    db = Database(tmp_path / "e.sqlite"); db.init_schema()
+    out = export_excel(db, tmp_path / "empty.xlsx")
+    assert out.exists()  # writes a valid (zeroed) workbook even with no trades

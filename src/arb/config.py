@@ -56,7 +56,9 @@ class ThresholdConfig(BaseModel):
     """Tuning knobs for detection & sizing."""
 
     min_edge: float = 0.01  # min fee-net edge (dollars per contract) to flag
-    max_quote_age_ms: int = 2000  # quotes older than this are stale -> anomaly
+    # Quotes older than this are stale -> anomaly. Must exceed the feed cadence
+    # (Kalshi polls ~3s; WS re-emits ~2s), or healthy feeds false-trigger.
+    max_quote_age_ms: int = 8000
     max_stake_usd: float = 100.0  # per-opportunity cap (paper)
 
 

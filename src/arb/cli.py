@@ -150,9 +150,50 @@ def shortlist(
 
 
 @app.command()
-def run() -> None:
-    """[Phase 3] Run the live paper-trading engine over shortlisted markets."""
-    rprint("[yellow]run[/yellow] is implemented in Phase 3 (live paper engine).")
+def run(
+    mappings: str = typer.Option("config/markets.yaml", help="Curated mappings file."),
+    duration: float | None = typer.Option(
+        None, help="Stop after N seconds (default: run until Ctrl+C)."
+    ),
+    poll: bool = typer.Option(False, "--poll", help="Force REST polling for all venues (no WS)."),
+) -> None:
+    """[Phase 3] Run the live paper-trading engine over curated pairs.
+
+    Detects fee-net arbitrage in real time, records simulated fills, and sends
+    Telegram alerts on anomalies. Places NO real orders.
+    """
+    from arb.core.matching import load_mappings
+    from arb.infra.anomaly import AnomalyReporter
+    from arb.live.engine import Engine
+    from arb.live.simulator import PaperLedger
+    from arb.providers.factory import build_providers
+
+    s = get_settings()
+    cfg = load_app_config()
+    pairs = load_mappings(mappings)
+    if not pairs:
+        rprint(f"[yellow]No mappings in {mappings}. Add pairs (see markets.example.yaml) first.[/yellow]")
+        return
+
+    db = Database(s.db_file)
+    db.init_schema()
+    venues = sorted({v for p in pairs for v in p.legs})
+    providers = build_providers([v for v in venues if v in cfg.venues], environment=s.environment)
+    notifier = TelegramNotifier(s.telegram_bot_token, s.telegram_chat_id)
+    engine = Engine(
+        providers=providers,
+        pairs=pairs,
+        ledger=PaperLedger(db=db),
+        anomaly=AnomalyReporter(notifier),
+        thresholds=cfg.thresholds,
+    )
+    rprint(f"[bold]Live paper engine[/bold] — {len(pairs)} pair(s); Ctrl+C to stop.")
+    try:
+        asyncio.run(engine.run(duration_s=duration, force_poll=poll))
+    except KeyboardInterrupt:
+        rprint("\n[yellow]Stopped.[/yellow]")
+    rprint(f"[green]Paper trades:[/green] {engine.ledger.trades}  "
+           f"[green]P&L:[/green] ${engine.ledger.realized_profit:.2f}")
 
 
 @app.command("test-alert")

@@ -71,17 +71,16 @@ arbitrage-bot/
       polymarket.py       # (Phase 1) Gamma discovery + CLOB books; WS
     core/
       fees.py             # per-venue fee models (Kalshi convex; Polymarket bps)  [done]
-      pricing.py          # fee-net cross-venue edge + book-walking sizing  [done]
-      matching.py         # curated mapping loader + suggestion heuristics  [done]
-      sizing.py           # (Phase 3) standalone stake allocation (uses pricing)
+      pricing.py          # fee-net edge + book-walking sizing (arb detection)  [done]
+      matching.py         # curated mapping loader + suggestion heuristics       [done]
     analysis/
       collector.py        # cron entrypoint: sweep -> snapshot -> DB         [done]
       report.py           # DB -> Excel per-market stats                     [done]
       shortlist.py        # rank curated pairs by fee-net edge -> Excel      [done]
     live/
-      engine.py           # (Phase 3) feeds -> detect -> size -> paper-exec
-      feeds.py            # (Phase 3) WS managers w/ reconnect + delta resync
-      simulator.py        # (Phase 3) paper fills + P&L ledger
+      engine.py           # feeds -> detect -> size -> paper-exec            [done]
+      feeds.py            # Polymarket WS + Kalshi polling feeds             [done]
+      simulator.py        # paper fills + P&L ledger                         [done]
     infra/
       db.py               # SQLite schema + access                              [done]
       telegram.py         # Bot API notifier (fails soft)                        [done]
@@ -231,6 +230,36 @@ sizing is live in Phase 3 (`core.pricing.find_arbitrage`).
 `config/markets.yaml` is *not* gitignored — commit your curated mappings to sync
 them across machines (like this doc).
 
+## 6d. Live paper engine (Phase 3)
+
+```bash
+arb run                       # run until Ctrl+C over config/markets.yaml pairs
+arb run --duration 60         # bounded run (e.g. for cron / testing)
+arb run --poll                # force REST polling for all venues (no WebSocket)
+```
+
+For every curated pair, the engine maintains live order books and computes the
+fee-net arbitrage in real time (`core.pricing.find_arbitrage`, walking both
+books). A profitable, **fresh** opportunity above `thresholds.min_edge` is sized
+against `thresholds.max_stake_usd` and recorded by the **paper simulator**
+(`paper_fills` table + running P&L). No real orders are ever placed.
+
+Feeds:
+- **Polymarket** — public **WebSocket** (`book` snapshot + `price_change` deltas),
+  auto-reconnect with backoff, periodic re-emit so a healthy socket keeps books
+  fresh.
+- **Kalshi** — **REST polling** (~3s). Its WebSocket requires RSA auth, so live
+  Kalshi streaming is deferred to Phase 4; `--poll` also forces this everywhere.
+
+Safety/robustness:
+- **Staleness guard** — a quote older than `max_quote_age_ms` is never traded on;
+  it raises a `stale_quote` anomaly → Telegram. Keep the threshold above the feed
+  cadence (default 8s).
+- **Anomaly routing** — feed errors, reconnects, and staleness all flow through
+  `infra.anomaly` and escalate to Telegram (warnings/criticals).
+- **Hysteresis** — each opportunity records once; it must close (edge ≤ 0) before
+  it can re-trigger, so a persistent gap doesn't spam fills/alerts.
+
 ## 7. Roadmap
 
 - **Phase 0 — Scaffold** ✅ config, DB, logging, Telegram, anomaly, Provider ABC +
@@ -242,8 +271,9 @@ them across machines (like this doc).
   title-similarity suggestions; fee-net arbitrage pricing (`core.pricing`); ranked
   shortlist. *Deliverable: shortlist of viable pairs → seed markets chosen here.*
   See "Matching & shortlisting" below.
-- **Phase 3 — Live engine (paper):** WS feeds w/ reconnect+resync, fee-net detection,
-  book-walking sizer, paper simulator + P&L, anomaly → Telegram.
+- **Phase 3 — Live engine (paper)** ✅ Polymarket WS + Kalshi polling feeds, real-time
+  fee-net detection over curated pairs, book-walking sizer, paper simulator + P&L,
+  anomaly → Telegram. See "Live paper engine" below.
 - **Phase 4 (gated, later) — Live execution:** implement `place_order` (Kalshi REST
   first, Polymarket EIP-712 second), explicit enable flag, semi-auto (Telegram
   confirm) before any full-auto.

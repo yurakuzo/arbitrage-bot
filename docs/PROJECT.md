@@ -340,3 +340,8 @@ arb test-alert         # Telegram round-trip
 Later phases add: `arb collect` → rows in SQLite; `arb report` → valid `.xlsx`;
 `arb run` dry-run against real WS in paper mode with an injected anomaly confirming
 a Telegram alert.
+
+### CI
+GitHub Actions (`.github/workflows/ci.yml`) runs `ruff check` + `pytest` on every
+push/PR to `main`, across Python 3.11 and 3.13. The suite is fully offline (no API
+calls), so CI is deterministic and needs no secrets.

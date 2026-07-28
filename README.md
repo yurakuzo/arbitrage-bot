@@ -1,5 +1,7 @@
 # arbitrage-bot
 
+[![CI](https://github.com/yurakuzo/arbitrage-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/yurakuzo/arbitrage-bot/actions/workflows/ci.yml)
+
 Cross-venue arbitrage bot for **Polymarket** and **Kalshi**.
 
 - **Analysis mode** — cron sweep of repeatable markets → SQLite → Excel report.

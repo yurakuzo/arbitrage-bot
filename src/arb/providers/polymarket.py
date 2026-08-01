@@ -156,28 +156,38 @@ class PolymarketProvider(Provider):
         self._signature_type = signature_type
         self._clob_client = None
 
+    _PAGE = 100  # Gamma caps every /markets response at 100 rows
+
     async def list_markets(self, flt: MarketFilter) -> list[Market]:
         target = flt.limit or 200
-        params = {
-            "active": "true",
-            "closed": "false",
-            "limit": min(500, target),
-            "order": "volumeNum",
-            "ascending": "false",
-        }
-        if flt.query:
-            params["slug"] = flt.query
-        data = await self._gamma.get_json("/markets", params=params)
-        rows = data if isinstance(data, list) else data.get("data", [])
         markets: list[Market] = []
-        for row in rows[:target]:
-            if not row.get("conditionId") or not row.get("clobTokenIds"):
-                continue
-            m = parse_market(row)
-            if m.raw.get("token_ids"):
-                self._token_cache[m.market_id] = m.raw["token_ids"]
-            markets.append(m)
-        return markets
+        offset = 0
+        while len(markets) < target:
+            params = {
+                "active": "true",
+                "closed": "false",
+                "limit": self._PAGE,
+                "offset": offset,
+                "order": "volumeNum",
+                "ascending": "false",
+            }
+            if flt.query:
+                params["slug"] = flt.query
+            data = await self._gamma.get_json("/markets", params=params)
+            rows = data if isinstance(data, list) else data.get("data", [])
+            if not rows:
+                break
+            for row in rows:
+                if not row.get("conditionId") or not row.get("clobTokenIds"):
+                    continue
+                m = parse_market(row)
+                if m.raw.get("token_ids"):
+                    self._token_cache[m.market_id] = m.raw["token_ids"]
+                markets.append(m)
+            offset += self._PAGE
+            if len(rows) < self._PAGE:  # last page
+                break
+        return markets[:target]
 
     async def _resolve_tokens(self, condition_id: str) -> tuple[str, str]:
         if condition_id in self._token_cache:

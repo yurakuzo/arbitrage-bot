@@ -237,45 +237,64 @@ class KalshiProvider(Provider):
                 break
         return markets[:target]
 
-    async def _series_in_category(self, category: str) -> list[str]:
-        data = await self._http.get_json("/series", params={"category": category})
-        series = data.get("series", []) if isinstance(data, dict) else []
-        return [s["ticker"] for s in series if s.get("ticker")]
+    async def _sweep_events(self, max_markets: int) -> list[Market]:
+        """Paginate the /events stream and collect real (non-noise) markets.
+
+        /events is diverse and NOT dominated by the auto-generated sports parlays
+        that flood /markets, so this is the efficient bulk source. (Kalshi ignores
+        the ?category= filter here, so we sweep the whole stream and rank later.)
+        """
+        out: list[Market] = []
+        cursor: str | None = None
+        while len(out) < max_markets:
+            params: dict = {"status": "open", "with_nested_markets": "true", "limit": 200}
+            if cursor:
+                params["cursor"] = cursor
+            data = await self._http.get_json("/events", params=params)
+            events = data.get("events", []) if isinstance(data, dict) else []
+            if not events:
+                break
+            for ev in events:
+                ev_ticker = ev.get("event_ticker")
+                for m in ev.get("markets", []) or []:
+                    # Nested markets may omit event_ticker; inject so series_key resolves.
+                    m.setdefault("event_ticker", ev_ticker)
+                    market = parse_market(m)
+                    if not _is_noise(market):
+                        out.append(market)
+            cursor = data.get("cursor") if isinstance(data, dict) else None
+            if not cursor:
+                break
+        return out[:max_markets]
 
     async def discover(self, limit: int, discovery: dict | None = None) -> list[Market]:
-        """Sweep curated series (and/or whole categories); drop provisional/MVE noise.
-
-        Kalshi's default /markets listing is >90% auto-generated sports parlays,
-        so blind top-N discovery is useless. Series/category sweeps return the
-        real recurring markets (weather, econ, politics).
-        """
+        """Discover real markets: a bulk /events sweep plus any explicit series,
+        dropping provisional/MVE sports noise. Kalshi's flat /markets listing is
+        >90% auto-generated parlays, so we never sweep it blindly."""
         discovery = discovery or {}
-        series: list[str] = list(discovery.get("series") or [])
-        for cat in discovery.get("categories") or []:
-            try:
-                series += await self._series_in_category(cat)
-            except Exception as exc:  # noqa: BLE001
-                log.warning("kalshi: category '%s' lookup failed: %s", cat, exc)
-
-        # De-duplicate, preserve order.
-        seen: set[str] = set()
-        series = [s for s in series if not (s in seen or seen.add(s))]
-
-        if not series:
-            log.warning("kalshi: no series/categories configured; falling back to raw listing")
-            pool = await self.list_markets(MarketFilter(status="open", limit=limit))
-            return [m for m in pool if not _is_noise(m)]
-
-        per = int(discovery.get("per_series_limit") or 100)
         out: list[Market] = []
-        for st in series:
+
+        # Explicit series (each expands to its markets).
+        per = int(discovery.get("per_series_limit") or 100)
+        for st in discovery.get("series") or []:
             try:
                 ms = await self.list_markets(MarketFilter(series_key=st, status="open", limit=per))
                 out.extend(m for m in ms if not _is_noise(m))
             except Exception as exc:  # noqa: BLE001
                 log.warning("kalshi: series '%s' failed: %s", st, exc)
-        log.info("kalshi: discovered %d markets across %d series", len(out), len(series))
-        return out
+
+        # Bulk /events sweep (pull at least `limit` candidates to rank).
+        cap = max(limit, int(discovery.get("max_markets") or 2000))
+        if cap > 0:
+            try:
+                out.extend(await self._sweep_events(cap))
+            except Exception as exc:  # noqa: BLE001
+                log.warning("kalshi: /events sweep failed: %s", exc)
+
+        seen: set[str] = set()
+        deduped = [m for m in out if not (m.market_id in seen or seen.add(m.market_id))]
+        log.info("kalshi: discovered %d unique markets", len(deduped))
+        return deduped
 
     async def get_order_book(self, market_id: str) -> MarketBook:
         data = await self._http.get_json(f"/markets/{market_id}/orderbook")

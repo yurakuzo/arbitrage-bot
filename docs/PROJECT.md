@@ -194,15 +194,17 @@ builds two sheets: **markets** (latest snapshot per market — YES/NO best bid/a
 spread, ask-depth, volume, liquidity, volatility) and **summary** (per-venue
 counts). Sorted by liquidity then volume.
 
-**Discovery is venue-specific** (`config.yaml -> discovery`):
-- **Polymarket** — its `/markets` listing is volume-sorted, so we just take the
-  top N by volume. No curation needed.
-- **Kalshi** — its `/markets` listing is >90% auto-generated sports parlays
-  (`KXMVE...`, provisional), so blind top-N is useless. Instead we sweep curated
-  **series** (each series = a recurring market family) and/or whole **categories**
-  (resolved via `GET /series?category=`), dropping provisional/MVE noise. Default
-  seeds are daily high-temp series (`KXHIGHNY/LAX/CHI`) — the "weather per day"
-  case. Add econ/politics series or set `categories: ["Economics"]` to widen.
+**Discovery is venue-specific** (`config.yaml -> discovery`); `arb collect --limit N`
+snapshots the top N by volume per venue from each candidate pool:
+- **Polymarket** — Gamma's `/markets` is volume-sorted but caps at 100/response,
+  so `list_markets` **paginates by `offset`** to fetch up to `--limit`. No curation.
+- **Kalshi** — its flat `/markets` listing is >90% auto-generated sports parlays
+  (`KXMVE...`, provisional), and the `?category=` filter is ignored by the API.
+  So we **sweep the `/events` stream** (paginated, `with_nested_markets`) — which
+  is diverse and *not* parlay-dominated — up to `discovery.kalshi.max_markets`
+  (default 2000), dropping provisional/MVE noise, then rank by volume. Optionally
+  pin specific `series` tickers too. This yields ~100+ distinct market families
+  (GDP, elections, Supreme Court, crypto, world leaders, weather, …).
 
 Note: cross-venue *matching* (deciding a Kalshi market and a Polymarket market are
 the same outcome) is **Phase 2** — Phase 1 only gathers per-venue stats to inform

@@ -23,11 +23,6 @@ from arb.providers.models import Market, MarketBook, Outcome
 log = get_logger(__name__)
 
 _CONCURRENCY = 8
-# List this many times `limit` markets, then snapshot the top `limit` by
-# liquidity/volume. Lets us pick the *viable* markets even when a venue doesn't
-# return them in popularity order (Kalshi lists provisional markets first).
-_POOL_FACTOR = 10
-_POOL_CAP = 1000
 
 
 def _rank_key(m: Market) -> tuple[float, float]:
@@ -101,8 +96,7 @@ async def collect_venue(
 ) -> int:
     ts = datetime.now(UTC)
     ts_iso = ts.isoformat()
-    pool_size = min(_POOL_CAP, max(limit, limit * _POOL_FACTOR))
-    pool = await provider.discover(pool_size, discovery)
+    pool = await provider.discover(limit, discovery)
     markets = sorted(pool, key=_rank_key, reverse=True)[:limit]
     log.info(
         "%s: discovered %d markets, snapshotting top %d by liquidity/volume",

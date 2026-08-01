@@ -76,24 +76,22 @@ class ThresholdConfig(BaseModel):
 class VenueDiscovery(BaseModel):
     """How to find candidate markets for a venue in analysis mode."""
 
-    # Kalshi: series tickers to sweep (each expands to its recurring markets).
+    # Kalshi: specific series tickers to pin (each expands to its markets).
     series: list[str] = Field(default_factory=list)
-    # Kalshi: whole categories to sweep (resolved to their series via /series).
-    categories: list[str] = Field(default_factory=list)
-    # Max markets listed per series.
+    # Max markets listed per explicit series.
     per_series_limit: int = 100
+    # Kalshi: cap for the bulk /events sweep (real, diverse markets across all
+    # categories). Higher = more candidates ranked for snapshotting. 0 = skip.
+    max_markets: int = 2000
 
 
 class DiscoveryConfig(BaseModel):
-    """Per-venue discovery. Kalshi's listing is flooded by auto-generated sports
-    markets, so it needs curated series; Polymarket's listing is volume-sorted
-    and usable as-is."""
+    """Per-venue discovery. Kalshi's flat /markets listing is flooded by
+    auto-generated sports parlays, so it sweeps the /events stream (diverse, real
+    markets) instead; Polymarket's listing is volume-sorted and paginated."""
 
-    # Default seeds demonstrate the recurring-weather use case out of the box.
-    kalshi: VenueDiscovery = Field(
-        default_factory=lambda: VenueDiscovery(series=["KXHIGHNY", "KXHIGHLAX", "KXHIGHCHI"])
-    )
-    polymarket: VenueDiscovery = Field(default_factory=VenueDiscovery)
+    kalshi: VenueDiscovery = Field(default_factory=VenueDiscovery)
+    polymarket: VenueDiscovery = Field(default_factory=lambda: VenueDiscovery(max_markets=0))
 
 
 class ExecutionConfig(BaseModel):

@@ -1,0 +1,29 @@
+# Curated cross-venue market mappings (Phase 2). Copy to config/markets.yaml.
+#
+# Each entry asserts that the listed markets resolve on the SAME real-world
+# outcome, with each venue's "event happens" side aligned via `outcome`. This is
+# the source of truth for arbitrage — a WRONG entry manufactures fake edge and
+# real losses, so add entries only after reviewing `arb suggest` output and the
+# actual market rules on both venues.
+#
+# outcome: which side means "the event happens" on that venue (yes | no).
+# market_id: Kalshi = market ticker; Polymarket = conditionId (0x...).
+
+pairs:
+  # --- EXAMPLE (placeholder ids — replace with a real, verified pair) ---------
+  - canonical_id: example-fed-cut-2026-09
+    description: "Fed cuts rates at the September 2026 FOMC meeting"
+    legs:
+      kalshi:
+        market_id: KXFED-26SEP-C25       # replace with the real ticker
+        outcome: yes
+      polymarket:
+        market_id: "0x0000000000000000000000000000000000000000000000000000000000000000"
+        outcome: yes
+
+  # A leg may be written as a bare id when the side is "yes":
+  # - canonical_id: example-shorthand
+  #   description: "..."
+  #   legs:
+  #     kalshi: KXSOMETHING-...
+  #     polymarket: "0xabc..."

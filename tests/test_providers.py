@@ -47,19 +47,40 @@ def test_kalshi_orderbook_derives_asks_from_opposite_bids():
 def test_polymarket_parse_market_and_tokens():
     raw = {
         "conditionId": "0xabc",
-        "question": "New Rihanna Album before GTA VI?",
-        "slug": "rihanna-gta",
+        "question": "Will Oprah Winfrey win the 2028 Democratic nomination?",
+        "slug": "oprah-2028-dem",
         "endDate": "2026-07-31T12:00:00Z",
         "clobTokenIds": '["111", "222"]',
         "volumeNum": 877540.22,
         "liquidityNum": 14104.15,
         "bestBid": "0.50",
         "bestAsk": "0.51",
+        "groupItemTitle": "Oprah Winfrey",
+        "events": [{"ticker": "2028-dem-nomination", "slug": "2028-dem-nomination",
+                    "title": "2028 Democratic nomination"}],
     }
     m = polymarket.parse_market(raw)
     assert m.market_id == "0xabc"
     assert m.raw["token_ids"] == ("111", "222")  # (YES, NO)
     assert m.raw["volume"] == 877540.22
+    # series_key groups by the parent EVENT, not the per-candidate label.
+    assert m.series_key == "2028-dem-nomination"
+    assert m.raw["outcome_label"] == "Oprah Winfrey"
+
+
+def test_polymarket_series_key_falls_back_and_handles_missing():
+    # No events -> None (not the outcome label).
+    m = polymarket.parse_market(
+        {"conditionId": "0x1", "question": "q", "clobTokenIds": '["1","2"]',
+         "groupItemTitle": "Some Candidate"}
+    )
+    assert m.series_key is None
+    # ticker missing -> falls back to slug.
+    m2 = polymarket.parse_market(
+        {"conditionId": "0x2", "question": "q", "clobTokenIds": '["1","2"]',
+         "events": [{"slug": "event-slug"}]}
+    )
+    assert m2.series_key == "event-slug"
 
 
 def test_kalshi_noise_filter():

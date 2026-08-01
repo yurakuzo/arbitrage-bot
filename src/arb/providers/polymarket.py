@@ -86,15 +86,29 @@ def _token_ids(raw: dict) -> tuple[str, str] | None:
     return None
 
 
+def _event_series_key(raw: dict) -> str | None:
+    """The market's parent event, which groups related markets (all candidates of
+    one nomination, or the daily instances of a recurring market) — analogous to
+    Kalshi's series ticker. NOT `groupItemTitle`, which is the per-outcome label
+    (e.g. a single candidate's name)."""
+    events = raw.get("events")
+    if isinstance(events, list) and events:
+        e = events[0]
+        if isinstance(e, dict):
+            return e.get("ticker") or e.get("slug") or e.get("title")
+    return None
+
+
 def parse_market(raw: dict) -> Market:
     return Market(
         venue=Venue.POLYMARKET,
         market_id=raw["conditionId"],
         title=raw.get("question") or raw.get("slug") or raw["conditionId"],
         close_time=_parse_dt(raw.get("endDate")),
-        series_key=raw.get("groupItemTitle") or None,
+        series_key=_event_series_key(raw),
         raw={
             "slug": raw.get("slug"),
+            "outcome_label": raw.get("groupItemTitle"),  # per-outcome name, not the series
             "token_ids": _token_ids(raw),
             "volume": _f(raw.get("volumeNum")) or _f(raw.get("volume")),
             "liquidity": _f(raw.get("liquidityNum")) or _f(raw.get("liquidity")),

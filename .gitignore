@@ -5,6 +5,7 @@
 .env.*
 !.env.example
 config/config.yaml
+config/markets.yaml
 config/*.local.yaml
 
 # Data & reports (local, per-machine)

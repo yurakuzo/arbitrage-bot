@@ -233,8 +233,9 @@ sizing is live in Phase 3 (`core.pricing.find_arbitrage`).
 > Polymarket's (politics, culture) **overlap thinly**. Expect a small, curated set
 > of genuinely matchable pairs — quality over quantity.
 
-`config/markets.yaml` is *not* gitignored — commit your curated mappings to sync
-them across machines (like this doc).
+`config/markets.yaml` is gitignored (local trading config, like `config.yaml`) —
+start from `config/markets.example.yaml`. To sync your curated mappings across
+machines, copy the file directly or `git add -f config/markets.yaml` deliberately.
 
 ## 6d. Live paper engine (Phase 3)
 

@@ -44,6 +44,10 @@ if TYPE_CHECKING:
 PROD_BASE = "https://api.elections.kalshi.com/trade-api/v2"
 DEMO_BASE = "https://demo-api.kalshi.co/trade-api/v2"
 
+# Client-side request cap. Kalshi's Basic tier allows ~20 read req/s; we pace
+# well under it to avoid 429s. Raise this if your API tier is higher.
+_KALSHI_RATE_PER_SEC = 10.0
+
 log = get_logger(__name__)
 
 
@@ -173,7 +177,7 @@ class KalshiProvider(Provider):
         # Public read endpoints are served by the production host; authenticated
         # order calls require RSA credentials (Phase 4).
         self.environment = environment
-        self._http = RestClient(base_url=PROD_BASE)
+        self._http = RestClient(base_url=PROD_BASE, rate_per_sec=_KALSHI_RATE_PER_SEC)
         self._key_id = key_id
         self._private_key_path = private_key_path
         self._signer = None  # built lazily on first authenticated call

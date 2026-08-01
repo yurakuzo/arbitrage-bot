@@ -7,6 +7,7 @@ Phase 0 wires the skeleton: `init-db`, `check`, and `setup-telegram` are live;
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import typer
 from rich import print as rprint
@@ -33,6 +34,9 @@ def check() -> None:
     rprint(f"[bold]DB path:[/bold] {s.db_file}")
     rprint(f"[bold]Telegram configured:[/bold] {s.telegram_enabled}")
     rprint(f"[bold]Kalshi key set:[/bold] {bool(s.kalshi_api_key_id)}")
+    wallet = s.polymarket_env_file
+    missing = " [red](missing!)[/red]" if wallet and not Path(wallet).exists() else ""
+    rprint(f"[bold]Polymarket wallet env:[/bold] {wallet or '(not set)'}{missing}")
     rprint(f"[bold]Venues:[/bold] {', '.join(cfg.venues)}")
     rprint(f"[bold]Thresholds:[/bold] {cfg.thresholds.model_dump()}")
     from arb.live.gate import TradingGate
@@ -164,6 +168,9 @@ def run(
     mode: str | None = typer.Option(
         None, help="Override execution mode: paper | semi_auto | auto (default: config)."
     ),
+    wallet_env: str | None = typer.Option(
+        None, help="Polymarket wallet dotenv file for live orders (e.g. .env.1pixel)."
+    ),
 ) -> None:
     """[Phase 3/4] Run the live engine over curated pairs.
 
@@ -193,7 +200,10 @@ def run(
     db.init_schema()
     venues = sorted({v for p in pairs for v in p.legs})
     providers = build_providers(
-        [v for v in venues if v in cfg.venues], environment=s.environment, settings=s
+        [v for v in venues if v in cfg.venues],
+        environment=s.environment,
+        settings=s,
+        polymarket_wallet_env=wallet_env,
     )
     notifier = TelegramNotifier(s.telegram_bot_token, s.telegram_chat_id)
     gate = TradingGate.from_config(s, cfg.execution)

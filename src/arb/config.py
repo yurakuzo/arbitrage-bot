@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     kalshi_private_key_path: str | None = None
 
     polymarket_private_key: str | None = None
+    # Path to the wallet dotenv file to trade from (e.g. ".env.1pixel"). Its
+    # PRIVATE_KEY/PROXY_WALLET are loaded lazily only when placing a real order.
+    polymarket_env_file: str | None = None
+    # Polymarket wallet signature type: 1 = email/magic (POLY_PROXY),
+    # 2 = browser/Gnosis Safe (POLY_GNOSIS_SAFE). Must match your wallet.
+    polymarket_signature_type: int = 2
 
     # HARD master switch for real order placement. Must be explicitly true AND
     # combined with a non-paper execution mode AND prod environment before any

@@ -1,5 +1,9 @@
 # Secrets & local config
+# Ignore ALL env variants (.env.1pixel, .env.feDUP, wallet keys, etc.);
+# keep only the committed template .env.example (no secrets).
 .env
+.env.*
+!.env.example
 config/config.yaml
 config/*.local.yaml
 

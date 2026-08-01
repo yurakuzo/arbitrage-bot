@@ -96,7 +96,27 @@ def _summary(df: pd.DataFrame) -> pd.DataFrame:
     return per_venue
 
 
+def _market_url(venue: str, market_id: str, series_key) -> str | None:
+    """Best-effort public URL for a market, so the report title can link out.
+
+    Polymarket -> the parent event page (series_key holds the event slug).
+    Kalshi     -> the series page (leading segment of the market ticker).
+    """
+    from urllib.parse import quote
+
+    if venue == "polymarket":
+        slug = None if series_key is None or pd.isna(series_key) else str(series_key)
+        return f"https://polymarket.com/event/{quote(slug, safe='')}" if slug else None
+    if venue == "kalshi":
+        series = series_key if (series_key is not None and not pd.isna(series_key)) else None
+        series = str(series or str(market_id).split("-", 1)[0]).lower()
+        return f"https://kalshi.com/markets/{quote(series, safe='')}"
+    return None
+
+
 def _autoformat(writer: pd.ExcelWriter, sheet: str, df: pd.DataFrame) -> None:
+    from openpyxl.styles import Font
+
     ws = writer.sheets[sheet]
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
@@ -105,6 +125,18 @@ def _autoformat(writer: pd.ExcelWriter, sheet: str, df: pd.DataFrame) -> None:
         maxlen = 12 if pd.isna(maxlen) else int(maxlen)  # all-NaN columns -> default
         width = min(45, max(12, maxlen + 2, len(str(col)) + 2))
         ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = width
+
+    # Make each market's title a clickable link to its venue page.
+    if "title" in df.columns:
+        title_col = df.columns.get_loc("title") + 1
+        link_font = Font(color="0563C1", underline="single")
+        for offset, (_, row) in enumerate(df.iterrows(), start=2):
+            url = _market_url(row["venue"], row["market_id"], row.get("series_key"))
+            if not url:
+                continue
+            cell = ws.cell(row=offset, column=title_col)
+            cell.hyperlink = url
+            cell.font = link_font
 
 
 def write_report(db: Database, out_path: Path | str) -> Path:

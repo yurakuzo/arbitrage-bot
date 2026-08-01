@@ -22,10 +22,14 @@ _REGISTRY = {
 
 
 def build_providers(
-    venues: list[str], environment: str = "demo", settings: Settings | None = None
+    venues: list[str],
+    environment: str = "demo",
+    settings: Settings | None = None,
+    polymarket_wallet_env: str | None = None,
 ) -> dict[str, Provider]:
     """Instantiate providers. When `settings` is given, live credentials are
-    threaded to the venues that need them (Kalshi RSA key for Phase 4)."""
+    threaded to the venues that need them (Kalshi RSA key; Polymarket wallet env).
+    `polymarket_wallet_env` overrides the wallet file for this run."""
     providers: dict[str, Provider] = {}
     for name in venues:
         key = name.lower()
@@ -36,7 +40,12 @@ def build_providers(
                 private_key_path=settings.kalshi_private_key_path if settings else None,
             )
         elif key == "polymarket":
-            providers[key] = PolymarketProvider(environment=environment)
+            providers[key] = PolymarketProvider(
+                environment=environment,
+                wallet_env_file=polymarket_wallet_env
+                or (settings.polymarket_env_file if settings else None),
+                signature_type=settings.polymarket_signature_type if settings else 2,
+            )
         else:
             raise ValueError(f"Unknown venue '{name}'. Known: {sorted(_REGISTRY)}")
     return providers

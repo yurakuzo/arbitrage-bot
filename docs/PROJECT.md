@@ -68,8 +68,9 @@ arbitrage-bot/
       base.py             # Provider ABC — the pluggable interface
       models.py           # normalized market/book types + Order/OrderResult
       kalshi.py           # discovery + books; gated RSA-signed place_order  [done]
-      polymarket.py       # Gamma discovery + CLOB books/WS; place_order stub [4b]
-      auth/kalshi_auth.py # Kalshi RSA-PSS request signer                     [done]
+      polymarket.py       # Gamma discovery + CLOB books/WS; gated place_order [done]
+      auth/kalshi_auth.py     # Kalshi RSA-PSS request signer                 [done]
+      auth/polymarket_auth.py # wallet-env credential loader (redacts key)    [done]
     core/
       fees.py             # per-venue fee models (Kalshi convex; Polymarket bps)  [done]
       pricing.py          # fee-net edge + book-walking sizing (arb detection)  [done]
@@ -307,9 +308,15 @@ opposite bet.
 - **Kalshi** ✅ `place_order` implemented: RSA-PSS request signing
   (`providers.auth.kalshi_auth`), `POST /portfolio/orders`, prices in cents. Needs
   `ARB_KALSHI_API_KEY_ID` + `ARB_KALSHI_PRIVATE_KEY_PATH` and `pip install -e '.[live]'`.
-- **Polymarket** 🟡 stub (Phase 4b): requires `py-clob-client`, a funded Polygon
-  wallet, one-time USDC/CTF approvals, and EIP-712 order signing. Raises a clear
-  `NotImplementedError` until wired.
+- **Polymarket** ✅ `place_order` implemented (Phase 4b) via `py-clob-client`:
+  loads a **wallet dotenv file** (`ARB_POLYMARKET_ENV_FILE` or `arb run
+  --wallet-env .env.1pixel`) containing `PRIVATE_KEY` + `PROXY_WALLET`, derives L2
+  API creds (L1 EIP-712), resolves the outcome→CLOB token, and posts a FOK order.
+  Prereqs: `pip install -e '.[live]'`, a funded Polygon wallet with one-time
+  USDC/CTF approvals, and `ARB_POLYMARKET_SIGNATURE_TYPE` matching the wallet
+  (1 = email/magic, 2 = browser/Gnosis Safe). Multiple wallets = multiple env
+  files; pick one per run. Secrets are read at call time (never into global env)
+  and redacted in logs.
 
 Leg risk: legs are placed sequentially; if the second fails after the first fills,
 a `CRITICAL` anomaly fires (→ Telegram) flagging manual review. True atomicity
@@ -329,11 +336,12 @@ isn't possible across two independent venues — size conservatively.
 - **Phase 3 — Live engine (paper)** ✅ Polymarket WS + Kalshi polling feeds, real-time
   fee-net detection over curated pairs, book-walking sizer, paper simulator + P&L,
   anomaly → Telegram. See "Live paper engine" below.
-- **Phase 4 — Live execution (gated)** 🟡 *scaffolding done, off by default.*
+- **Phase 4 — Live execution (gated)** ✅ *code complete, off by default.*
   `TradingGate` (multi-flag, default paper), execution modes (paper/semi_auto/auto),
-  Telegram-confirm, Kalshi RSA-signed `place_order`. **Remaining (4b):** Polymarket
-  EIP-712 placement via `py-clob-client` + funded wallet/approvals; real-money
-  operation is the user's decision. See "Live execution" below.
+  Telegram-confirm, Kalshi RSA-signed `place_order`, **Polymarket EIP-712 placement
+  (4b)** via `py-clob-client` + wallet-env selection. Real-money operation (and the
+  regulatory question) is the user's decision; needs a funded wallet + approvals.
+  See "Live execution" below.
 
 ## 8. Verification
 

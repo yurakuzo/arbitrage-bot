@@ -36,10 +36,12 @@ def _depth(book: MarketBook, outcome: Outcome) -> float:
 def _upsert_market(conn, m: Market, ts_iso: str) -> None:
     conn.execute(
         """
-        INSERT INTO markets (venue, market_id, title, series_key, close_time, first_seen, last_seen)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO markets
+            (venue, market_id, title, subtitle, series_key, close_time, first_seen, last_seen)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(venue, market_id) DO UPDATE SET
             title=excluded.title,
+            subtitle=excluded.subtitle,
             series_key=excluded.series_key,
             close_time=excluded.close_time,
             last_seen=excluded.last_seen
@@ -48,6 +50,7 @@ def _upsert_market(conn, m: Market, ts_iso: str) -> None:
             m.venue.value,
             m.market_id,
             m.title,
+            m.raw.get("subtitle"),
             m.series_key,
             m.close_time.isoformat() if m.close_time else None,
             ts_iso,

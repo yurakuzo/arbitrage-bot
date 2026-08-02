@@ -56,11 +56,13 @@ def build_dataframe(db: Database) -> pd.DataFrame:
         .reset_index()
     )
 
+    mkt_cols = ["venue", "market_id", "title", "subtitle", "series_key", "close_time"]
     df = latest.merge(
-        markets[["venue", "market_id", "title", "series_key", "close_time"]],
+        markets[[c for c in mkt_cols if c in markets.columns]],
         on=["venue", "market_id"],
         how="left",
     ).merge(stats, on=["venue", "market_id"], how="left")
+    df = df.rename(columns={"subtitle": "outcome"})  # the specific contestant/threshold
 
     # Derived analytics.
     df["yes_spread"] = df["yes_best_ask"] - df["yes_best_bid"]
@@ -70,7 +72,7 @@ def build_dataframe(db: Database) -> pd.DataFrame:
     df["internal_yes_plus_no_ask"] = df["yes_best_ask"] + df["no_best_ask"]
 
     cols = [
-        "venue", "title", "market_id", "series_key", "close_time",
+        "venue", "title", "outcome", "series_key", "market_id", "close_time",
         "yes_best_bid", "yes_best_ask", "yes_spread",
         "no_best_bid", "no_best_ask", "no_spread",
         "internal_yes_plus_no_ask",

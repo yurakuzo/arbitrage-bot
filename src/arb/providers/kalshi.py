@@ -94,6 +94,7 @@ def parse_market(raw: dict) -> Market:
         series_key=_series_key(raw.get("event_ticker")),
         raw={
             "event_ticker": raw.get("event_ticker"),
+            "subtitle": raw.get("yes_sub_title"),  # the specific outcome/contestant
             "status": raw.get("status"),
             "is_provisional": raw.get("is_provisional"),
             "volume": _f(raw.get("volume_fp")),

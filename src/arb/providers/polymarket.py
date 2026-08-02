@@ -108,6 +108,7 @@ def parse_market(raw: dict) -> Market:
         series_key=_event_series_key(raw),
         raw={
             "slug": raw.get("slug"),
+            "subtitle": raw.get("groupItemTitle"),  # the specific outcome/candidate
             "outcome_label": raw.get("groupItemTitle"),  # per-outcome name, not the series
             "token_ids": _token_ids(raw),
             "volume": _f(raw.get("volumeNum")) or _f(raw.get("volume")),

@@ -194,6 +194,12 @@ builds two sheets: **markets** (latest snapshot per market — YES/NO best bid/a
 spread, ask-depth, volume, liquidity, volatility) and **summary** (per-venue
 counts). Sorted by liquidity then volume.
 
+The **`outcome`** column shows the specific contestant/threshold (Kalshi's
+`yes_sub_title`, e.g. "Gavin Newsom"; Polymarket's candidate). Kalshi gives every
+row in a multi-outcome event the same `title` and hides the contestant in the
+ticker suffix — `outcome` surfaces it, so you can sort/filter by it and pair a
+Kalshi market to its Polymarket equivalent candidate-by-candidate.
+
 **Discovery is venue-specific** (`config.yaml -> discovery`); `arb collect --limit N`
 snapshots the top N by volume per venue from each candidate pool:
 - **Polymarket** — Gamma's `/markets` is volume-sorted but caps at 100/response,

@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS markets (
     venue       TEXT NOT NULL,
     market_id   TEXT NOT NULL,
     title       TEXT,
+    subtitle    TEXT,          -- specific outcome (Kalshi yes_sub_title / Poly candidate)
     series_key  TEXT,
     close_time  TEXT,
     first_seen  TEXT NOT NULL,
@@ -92,6 +93,13 @@ class Database:
     def init_schema(self) -> None:
         with self.transaction() as conn:
             conn.executescript(SCHEMA)
+            # Lightweight migrations for pre-existing DBs (ADD COLUMN is a no-op
+            # on fresh schemas; ignore "duplicate column" on already-migrated ones).
+            for stmt in ("ALTER TABLE markets ADD COLUMN subtitle TEXT",):
+                try:
+                    conn.execute(stmt)
+                except sqlite3.OperationalError:
+                    pass
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

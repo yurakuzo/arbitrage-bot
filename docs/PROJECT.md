@@ -224,12 +224,16 @@ arb suggest --threshold 0.25      # propose candidate cross-venue matches (revie
 arb shortlist                     # rank curated pairs by fee-net edge -> reports/shortlist.xlsx
 ```
 
-**Matching is curated, never automatic.** `arb suggest` compares collected market
-titles (token Jaccard similarity) and prints ranked *candidates* — it never
-confirms them. You verify each against the real resolution rules on both venues,
-then add confirmed entries to `config/markets.yaml` (schema in
-`config/markets.example.yaml`), aligning each venue's "event happens" side. A
-wrong mapping manufactures fake edge and real losses.
+**Matching is curated, never automatic.** `arb suggest` matches markets by
+**contestant name** (the `outcome`), groups them by event, and ranks **event
+pairs** by how many contestants they share — then prints **ready-to-paste
+`markets.yaml`** blocks (optionally `--out pairs.yaml`). Example: it surfaces
+`KXPRESPERSON ↔ presidential-election-winner-2028 (27 shared)` above the
+nomination events. These are *suggestions* — you still verify the two events
+resolve on the same thing (general election vs nomination!) before adding them to
+`config/markets.yaml`, aligning each venue's "event happens" side. A wrong mapping
+manufactures fake edge and real losses. (For standalone binary markets without an
+`outcome`, `core.matching.suggest_matches` does plain title similarity.)
 
 `arb shortlist` then, for each mapping, pulls the latest snapshot per leg and
 computes the **fee-net** arbitrage edge in both directions

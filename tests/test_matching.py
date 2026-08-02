@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
-from arb.core.matching import load_mappings, suggest_matches
+from arb.core.matching import (
+    _name_similarity,
+    _name_tokens,
+    load_mappings,
+    render_pairs_yaml,
+    suggest_event_pairs,
+    suggest_matches,
+)
 from arb.providers.models import Market, Outcome, Venue
 
 
-def _m(venue, mid, title):
-    return Market(venue=venue, market_id=mid, title=title)
+def _m(venue, mid, title, subtitle=None, series_key=None):
+    return Market(venue=venue, market_id=mid, title=title, series_key=series_key,
+                  raw={"subtitle": subtitle})
 
 
 def test_load_mappings(tmp_path):
@@ -67,3 +75,49 @@ def test_suggest_matches_threshold_filters():
     kalshi = [_m(Venue.KALSHI, "K", "Fed interest rate decision September")]
     poly = [_m(Venue.POLYMARKET, "P", "Rihanna new album release")]
     assert suggest_matches(kalshi, poly, threshold=0.5) == []
+
+
+# --- Outcome-aware matching ------------------------------------------------------
+def test_name_tokens_normalizes_initials_and_periods():
+    assert _name_tokens("J.D. Vance") == {"jd", "vance"}
+    assert _name_tokens("Donald J. Trump") == {"donald", "trump"}  # middle initial dropped
+
+
+def test_name_similarity():
+    assert _name_similarity("J.D. Vance", "JD Vance") == 1.0
+    assert _name_similarity("Donald J. Trump", "Donald Trump") == 1.0
+    assert _name_similarity("Gavin Newsom", "Kamala Harris") == 0.0
+
+
+def test_suggest_event_pairs_groups_by_event():
+    kalshi = [
+        _m(Venue.KALSHI, "KXPRES-GNEWS", "Who will win?", "Gavin Newsom", "KXPRESPERSON"),
+        _m(Venue.KALSHI, "KXPRES-JVAN", "Who will win?", "J.D. Vance", "KXPRESPERSON"),
+        _m(Venue.KALSHI, "KXPRES-AOC", "Who will win?", "Alexandria Ocasio-Cortez", "KXPRESPERSON"),
+    ]
+    poly = [
+        _m(Venue.POLYMARKET, "0xa", "Will Newsom win?", "Gavin Newsom", "prez-2028"),
+        _m(Venue.POLYMARKET, "0xb", "Will Vance win?", "JD Vance", "prez-2028"),
+        _m(Venue.POLYMARKET, "0xc", "Will AOC win?", "Alexandria Ocasio-Cortez", "prez-2028"),
+    ]
+    pairs = suggest_event_pairs(kalshi, poly, name_threshold=0.6, min_shared=3)
+    assert len(pairs) == 1
+    evp = pairs[0]
+    assert evp.series_a == "KXPRESPERSON" and evp.series_b == "prez-2028"
+    assert evp.shared == 3
+
+    yaml_text = render_pairs_yaml(evp)
+    assert "KXPRES-GNEWS" in yaml_text and "0xa" in yaml_text
+    assert "canonical_id: prez-2028-gavin-newsom" in yaml_text
+
+
+def test_suggest_event_pairs_respects_min_shared():
+    kalshi = [_m(Venue.KALSHI, "K1", "t", "Gavin Newsom", "KXA")]
+    poly = [_m(Venue.POLYMARKET, "P1", "t", "Gavin Newsom", "pa")]
+    assert suggest_event_pairs(kalshi, poly, min_shared=3) == []
+
+
+def test_suggest_event_pairs_ignores_markets_without_outcome():
+    kalshi = [_m(Venue.KALSHI, "K1", "Will US invade Iran?", None, "KXIRAN")]
+    poly = [_m(Venue.POLYMARKET, "P1", "Will US invade Iran?", None, "iran")]
+    assert suggest_event_pairs(kalshi, poly, min_shared=1) == []

@@ -101,39 +101,64 @@ def report(
 
 @app.command()
 def suggest(
-    threshold: float = typer.Option(0.25, help="Min title-similarity score (0-1)."),
-    top_k: int = typer.Option(30, help="Max suggestions to show."),
+    name_threshold: float = typer.Option(0.6, help="Min contestant-name similarity (0-1)."),
+    min_shared: int = typer.Option(3, help="Min shared contestants to suggest an event pair."),
+    top: int = typer.Option(15, help="Max event pairs to show."),
+    yaml_for: int = typer.Option(3, help="Emit ready-to-paste markets.yaml for the top N pairs."),
+    out: str | None = typer.Option(None, help="Also write the emitted YAML to this file."),
 ) -> None:
-    """[Phase 2] Propose candidate cross-venue matches (for review, not confirmed)."""
-    from arb.core.matching import suggest_matches
-    from arb.providers.models import Venue
+    """[Phase 2] Suggest cross-venue pairs by matching contestants within events.
+
+    Matches Kalshi<->Polymarket markets by contestant name (the `outcome`), groups
+    them by event, and ranks event pairs by how many contestants they share.
+    Prints ready-to-paste markets.yaml blocks. Suggestions only — VERIFY the two
+    events resolve on the same thing before trading.
+    """
+    import sqlite3
+
+    from arb.core.matching import render_pairs_yaml, suggest_event_pairs
+    from arb.providers.models import Market, Venue
 
     s = get_settings()
     db = Database(s.db_file)
-    # Reuse collected market metadata as the candidate universe.
-    import sqlite3
-
-    from arb.providers.models import Market
 
     def _load(conn, venue: str) -> list[Market]:
         rows = conn.execute(
-            "SELECT venue, market_id, title, series_key FROM markets WHERE venue = ?", (venue,)
+            "SELECT venue, market_id, title, subtitle, series_key FROM markets WHERE venue = ?",
+            (venue,),
         ).fetchall()
-        return [Market(venue=Venue(r[0]), market_id=r[1], title=r[2] or "", series_key=r[3]) for r in rows]
+        return [
+            Market(venue=Venue(r[0]), market_id=r[1], title=r[2] or "", series_key=r[4],
+                   raw={"subtitle": r[3]})
+            for r in rows
+        ]
 
     with db.transaction() as conn:
         conn.row_factory = sqlite3.Row
-        ks = _load(conn, "kalshi")
-        ps = _load(conn, "polymarket")
-    suggestions = suggest_matches(ks, ps, threshold=threshold, top_k=top_k)
-    if not suggestions:
-        rprint("[yellow]No candidate matches above threshold. Try lowering --threshold.[/yellow]")
+        ks, ps = _load(conn, "kalshi"), _load(conn, "polymarket")
+
+    pairs = suggest_event_pairs(
+        ks, ps, name_threshold=name_threshold, min_shared=min_shared, top_k=top
+    )
+    if not pairs:
+        rprint("[yellow]No event pairs found. Collect more markets or lower --min-shared.[/yellow]")
         return
-    rprint(f"[bold]{len(suggestions)} candidate match(es)[/bold] (review before adding to markets.yaml):\n")
-    for sug in suggestions:
-        rprint(f"[green]{sug.score:.2f}[/green] terms={sug.shared_terms}")
-        rprint(f"   kalshi     [{sug.a.market_id}] {sug.a.title[:70]}")
-        rprint(f"   polymarket [{sug.b.market_id[:18]}…] {sug.b.title[:70]}\n")
+
+    rprint(f"[bold]{len(pairs)} candidate event pair(s)[/bold] (ranked by shared contestants):\n")
+    for evp in pairs:
+        rprint(f"[green]{evp.shared:>3} shared[/green]  "
+               f"kalshi:[cyan]{evp.series_a}[/cyan]  <->  polymarket:[cyan]{evp.series_b}[/cyan]")
+        rprint(f"        K: {evp.title_a[:60]}")
+        rprint(f"        P: {evp.title_b[:60]}")
+        rprint(f"        e.g. {', '.join(m.name for m in evp.matches[:5])}\n")
+
+    blocks = [render_pairs_yaml(evp) for evp in pairs[:yaml_for]]
+    if blocks:
+        rprint("[bold]Ready-to-paste markets.yaml (verify events match!):[/bold]")
+        rprint("[dim]" + ("\n\n".join(blocks)) + "[/dim]")
+    if out:
+        Path(out).write_text("\n\n".join(blocks) + "\n", encoding="utf-8")
+        rprint(f"\n[green]Wrote YAML to:[/green] {out}")
 
 
 @app.command()

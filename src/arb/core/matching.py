@@ -130,3 +130,130 @@ def suggest_matches(
                 suggestions.append(MatchSuggestion(score=score, a=a, b=b, shared_terms=shared))
     suggestions.sort(key=lambda s: s.score, reverse=True)
     return suggestions[:top_k]
+
+
+# --- Outcome-aware matching (multi-outcome events, e.g. election candidates) ----
+
+def _subtitle(m: Market) -> str | None:
+    return m.raw.get("subtitle")
+
+
+def _name_tokens(name: str) -> set[str]:
+    """Normalize a contestant name to comparable tokens.
+
+    Strips periods so 'J.D.' == 'JD', splits on non-alphanumerics, lowercases,
+    and drops 1-char tokens (middle initials) so 'Donald J. Trump' == 'Donald
+    Trump'.
+    """
+    cleaned = name.replace(".", "")
+    return {t for t in _TOKEN_RE.findall(cleaned.lower()) if len(t) > 1}
+
+
+def _name_similarity(a: str, b: str) -> float:
+    ta, tb = _name_tokens(a), _name_tokens(b)
+    if not ta or not tb:
+        return 0.0
+    return len(ta & tb) / len(ta | tb)
+
+
+@dataclass(frozen=True, slots=True)
+class OutcomeMatch:
+    score: float
+    a: Market  # e.g. kalshi market
+    b: Market  # e.g. polymarket market
+
+    @property
+    def name(self) -> str:
+        return _subtitle(self.a) or _subtitle(self.b) or ""
+
+
+@dataclass(frozen=True, slots=True)
+class EventPairSuggestion:
+    """Two events (one per venue) that share matched outcomes — the strong signal
+    that they're the same market family worth pairing."""
+
+    series_a: str | None
+    series_b: str | None
+    title_a: str
+    title_b: str
+    matches: list[OutcomeMatch]
+
+    @property
+    def shared(self) -> int:
+        return len(self.matches)
+
+
+def suggest_event_pairs(
+    markets_a: list[Market],
+    markets_b: list[Market],
+    *,
+    name_threshold: float = 0.6,
+    min_shared: int = 3,
+    top_k: int = 20,
+) -> list[EventPairSuggestion]:
+    """Match multi-outcome markets by contestant name, then group by event pair.
+
+    A Kalshi event and a Polymarket event that share many matched contestant
+    names are very likely the same market family (still human-verified — the two
+    events may differ, e.g. 'general election' vs 'nomination').
+    """
+    a_out = [m for m in markets_a if _subtitle(m)]
+    b_out = [m for m in markets_b if _subtitle(m)]
+
+    groups: dict[tuple, dict[str, OutcomeMatch]] = {}
+    titles: dict[tuple, tuple[str, str]] = {}
+    for a in a_out:
+        an = _subtitle(a) or ""
+        for b in b_out:
+            score = _name_similarity(an, _subtitle(b) or "")
+            if score < name_threshold:
+                continue
+            key = (a.series_key, b.series_key)
+            best = groups.setdefault(key, {})
+            titles.setdefault(key, (a.title, b.title))
+            # Keep the best Polymarket match per Kalshi market.
+            prev = best.get(a.market_id)
+            if prev is None or score > prev.score:
+                best[a.market_id] = OutcomeMatch(score=score, a=a, b=b)
+
+    out: list[EventPairSuggestion] = []
+    for key, best in groups.items():
+        matches = sorted(best.values(), key=lambda m: m.score, reverse=True)
+        if len(matches) >= min_shared:
+            ta, tb = titles[key]
+            out.append(EventPairSuggestion(key[0], key[1], ta, tb, matches))
+    out.sort(key=lambda e: e.shared, reverse=True)
+    return out[:top_k]
+
+
+def _slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def render_pairs_yaml(evp: EventPairSuggestion) -> str:
+    """Ready-to-paste markets.yaml `pairs:` entries for one event pair.
+
+    Aligns both venues' YES = 'this contestant wins'. VERIFY the two events are
+    truly the same resolution before trading (general election vs nomination,
+    etc.) — this is a suggestion, not a confirmed mapping.
+    """
+    base = _slug(evp.series_b or evp.series_a or "pair")
+    header = (
+        f"# Kalshi {evp.series_a}  <->  Polymarket {evp.series_b}  "
+        f"({evp.shared} shared) — VERIFY same event before trading"
+    )
+    lines = [header, "pairs:"]
+    for m in evp.matches:
+        name = m.name
+        lines += [
+            f"  - canonical_id: {base}-{_slug(name)}",
+            f"    description: \"{name}\"",
+            "    legs:",
+            "      kalshi:",
+            f"        market_id: {m.a.market_id}",
+            "        outcome: yes",
+            "      polymarket:",
+            f"        market_id: \"{m.b.market_id}\"",
+            "        outcome: yes",
+        ]
+    return "\n".join(lines)

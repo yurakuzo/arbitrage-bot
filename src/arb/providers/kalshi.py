@@ -279,12 +279,16 @@ class KalshiProvider(Provider):
         discovery = discovery or {}
         out: list[Market] = []
 
-        # Explicit series (each expands to its markets).
+        # Explicit series (each expands to its markets). Mark them "pinned" so
+        # the collector always snapshots them, regardless of volume ranking.
         per = int(discovery.get("per_series_limit") or 100)
         for st in discovery.get("series") or []:
             try:
                 ms = await self.list_markets(MarketFilter(series_key=st, status="open", limit=per))
-                out.extend(m for m in ms if not _is_noise(m))
+                for m in ms:
+                    if not _is_noise(m):
+                        m.raw["pinned"] = True
+                        out.append(m)
             except Exception as exc:  # noqa: BLE001
                 log.warning("kalshi: series '%s' failed: %s", st, exc)
 

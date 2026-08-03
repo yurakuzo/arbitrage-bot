@@ -33,9 +33,20 @@ discovery:
     # politics/crypto/world/etc. `max_markets` caps how many candidates we pull;
     # `arb collect --limit N` then snapshots the top N by volume.
     max_markets: 2000
-    # Optionally pin specific series tickers (each expands to its markets):
-    series: []                # e.g. [KXHIGHNY, KXBTC]
-    per_series_limit: 100
+    # PINNED series are ALWAYS snapshotted (they bypass the volume ranking), so
+    # low-volume-but-fast daily markets don't get crowded out. Good picks:
+    series:
+      # Daily crypto (pairable with Polymarket's short-dated BTC/ETH markets):
+      - KXBTCD          # Bitcoin price above/below (daily)
+      - KXETH           # Ethereum range
+      # Daily US-city weather (Kalshi-only — Polymarket has none, so no arb;
+      # collected for analysis / a future 3rd venue). No London on Kalshi.
+      - KXHIGHNY        # NYC high temp
+      - KXHIGHLAX       # LA high temp
+      - KXHIGHCHI       # Chicago high temp
+      - KXHIGHTHOU      # Houston high temp
+      - KXHIGHTMIN      # Minneapolis high temp
+    per_series_limit: 200
   polymarket:
     # Volume-sorted + paginated: `arb collect --limit N` fetches top N by volume
     # across all of Polymarket. No bulk sweep needed.

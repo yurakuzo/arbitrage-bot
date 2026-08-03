@@ -100,10 +100,18 @@ async def collect_venue(
     ts = datetime.now(UTC)
     ts_iso = ts.isoformat()
     pool = await provider.discover(limit, discovery)
-    markets = sorted(pool, key=_rank_key, reverse=True)[:limit]
+
+    # De-duplicate, then ALWAYS keep markets from explicitly-pinned series (they
+    # were deliberately chosen — e.g. daily weather/crypto, which lose the volume
+    # ranking); fill the remaining budget with the top-by-volume of the rest.
+    seen: set[str] = set()
+    uniq = [m for m in pool if not (m.market_id in seen or seen.add(m.market_id))]
+    pinned = [m for m in uniq if m.raw.get("pinned")]
+    rest = sorted((m for m in uniq if not m.raw.get("pinned")), key=_rank_key, reverse=True)
+    markets = pinned + rest[: max(0, limit - len(pinned))]
     log.info(
-        "%s: discovered %d markets, snapshotting top %d by liquidity/volume",
-        provider.venue.value, len(pool), len(markets),
+        "%s: discovered %d markets, snapshotting %d (%d pinned + %d top-by-volume)",
+        provider.venue.value, len(uniq), len(markets), len(pinned), len(markets) - len(pinned),
     )
 
     sem = asyncio.Semaphore(_CONCURRENCY)
